@@ -1,0 +1,11 @@
+{
+    "-1002903068618": {
+        "free_ad_count": 1,
+        "reset_interval_days": 1,
+        "invite_levels": {
+            "1": 2,
+            "2": 5,
+            "max": 10
+        }
+    }
+}
