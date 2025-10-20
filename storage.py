@@ -1,6 +1,7 @@
 import json
 import os
 import hashlib
+from datetime import datetime # Xato bartaraf etildi: 'datetime' import qilindi
 
 # Fayl nomlari
 CONFIG_FILE = 'data/config.json'
