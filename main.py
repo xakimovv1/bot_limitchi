@@ -43,15 +43,13 @@ async def handle_ping(request):
     """Render'dan kelgan soxta so'rovlarga javob beradi (botni uyg'otib turish uchun)."""
     return web.Response(text="Bot is awake and polling!")
 
-async def periodic_pinger(url, interval_seconds=180): # 180 sekund = 3 daqiqa
-    """Berilgan URL manzilga har 3 daqiqada so'rov yuboradi (o'zini-o'zi uyg'otish)."""
-    # So'rov yuborish uchun yangi session ochamiz
+async def periodic_pinger(url, interval_seconds=10): # HAR 10 SEKUNDGA O'ZGARTIRILDI
+    """Berilgan URL manzilga har 10 sekundda so'rov yuboradi (o'zini-o'zi uyg'otish)."""
     async with ClientSession() as session:
         while True:
-            await asyncio.sleep(interval_seconds)
+            await asyncio.sleep(interval_seconds) 
             try:
                 async with session.get(url) as response:
-                    # Ping so'rovi yuborilgani haqida terminalga yozamiz
                     print(f"🤖 Ping yuborildi. Status: {response.status}") 
             except Exception as e:
                 print(f"❌ Ping yuborishda xato: {e}")
@@ -106,14 +104,12 @@ class AdminStates(StatesGroup):
 async def get_required_members(config, ad_cycle_count):
     """Foydalanuvchi reklama tashlash uchun qancha odam taklif qilishi kerakligini hisoblaydi."""
     
-    # Bepul reklama sonini tekshirish
     if ad_cycle_count < config.get('free_ad_count', 1): 
         return 0 
     
     current_level = ad_cycle_count - config.get('free_ad_count', 1) + 1 
     invite_levels = config.get('invite_levels', {})
     
-    # Hozirgi level yoki 'max' level qiymatini qaytarish
     return invite_levels.get(str(current_level), invite_levels.get('max', 10))
 
 
@@ -143,7 +139,6 @@ async def get_group_list_keyboard():
             button_text = f"⚙️ Guruh ID: {chat_id}"
             builder.button(text=button_text, callback_data=f"select_chat:{chat_id}")
             
-    # Agar hech qanday guruh qo'shilmagan bo'lsa
     if not chat_ids:
          builder.button(text="❌ Guruhlar topilmadi.", callback_data="ignore")
 
@@ -197,7 +192,7 @@ def get_invite_levels_keyboard(chat_id, invite_levels: dict):
         if level_key != 'max':
              builder.button(text="❌", callback_data=f"delete_level:{chat_id}:{level_key}")
         else:
-             builder.button(text="  ", callback_data="ignore") # max ni o'chirib bo'lmaydi
+             builder.button(text="  ", callback_data="ignore") 
 
     builder.button(text="➕ Yangi Level qo'shish", callback_data=f"add_new_level:{chat_id}")
     builder.button(text="⬅️ Guruh sozlamalariga", callback_data=f"select_chat:{chat_id}")
@@ -237,35 +232,23 @@ async def get_channels_keyboard(channels):
 
 
 # --- MESSAGE HANDLERS (Login/Parol va FSM) ---
-# ... (process_login, process_password, process_new_free_ad_count, 
-# process_new_reset_interval, process_invite_level_name, process_invite_level_value,
-# process_new_chat_id_for_limit, process_new_channel_username, 
-# process_new_admin_login, process_new_admin_password funksiyalari to'liq kiritilishi kerak) ...
-
 
 async def handle_start(message: types.Message, state: FSMContext):
     """Botni /start buyrug'i bilan ishga tushirish (admin tekshiruvi)."""
-    # 1. .env dan kelgan ADMIN_TELEGRAM_ID orqali tekshirish
     if message.from_user.id == ADMIN_TELEGRAM_ID:
         await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
         await state.set_state(AdminStates.in_admin_panel)
         return
         
-    # 2. Login/parol orqali saqlangan admin ma'lumotlarini tekshirish
     admin = get_admin_data(message.from_user.id)
     if admin.get('username') and admin.get('password_hash'):
-        # Agar admin ma'lumotlari mavjud bo'lsa va /start ni yuborsa, to'g'ridan-to'g'ri panelga kiriting
         await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
         await state.set_state(AdminStates.in_admin_panel)
         return
 
-    # Agar admin topilmasa, login talab qilish
     await message.answer("🔑 **Admin Panelga kirish**\nIltimos, o'z loginingizni kiriting:")
     await state.set_state(AdminStates.waiting_for_login)
 
-# ... (Yuqorida aytilgan FSM funksiyalari bu yerda davom etadi) ...
-
-# Qolgan barcha FSM funksiyalari to'liq ko'chirib o'tkaziladi...
 async def process_login(message: types.Message, state: FSMContext):
     await state.update_data(temp_login=message.text)
     await message.answer("🔒 Parolingizni kiriting:")
@@ -468,8 +451,6 @@ async def process_new_admin_password(message: types.Message, state: FSMContext):
 # --- CALLBACK QUERY HANDLER ---
 
 async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
-    # ... (CallbackQuery larning to'liq mantiqi bu yerda davom etadi) ...
-
     data = call.data
     admin = get_admin_data(call.from_user.id) or {} 
 
@@ -513,7 +494,10 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         elif data.startswith("set_reset_interval:"):
             await call.message.edit_text("⏳ **Limit qancha kunda tiklansin?** (Kun sonini kiriting)", parse_mode="HTML")
             await state.set_state(AdminStates.waiting_for_reset_interval)
+        
+        # TelegramBadRequest xatosini oldini olish uchun faqat text tahrirlanayotganini tekshiramiz:
         await call.answer()
+        
     elif data.startswith("set_invite_levels:"):
         chat_id = int(data.split(":")[1])
         config = get_config(chat_id)
@@ -602,6 +586,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         await state.set_state(AdminStates.waiting_for_new_admin_password)
         await call.answer()
     else:
+        # call.answer() ni har qanday Callback oxirida chaqirish shart
         await call.answer("Boshqa buyruq topilmadi.", show_alert=False)
 
 
@@ -614,14 +599,11 @@ async def handle_new_member(message: types.Message):
     chat_id = message.chat.id
     
     if message.new_chat_members:
-        # ... (Avvalgi to'liq mantiq shu yerda davom etadi) ...
-        # Qo'shilganlar sonini hisoblash
         inviter_user_id = message.from_user.id
         inviter_full_name = message.from_user.full_name
         
         bot_id = (await bot.get_me()).id
         
-        # 1. Xabarni tuzish (Salomlashuv)
         member_links = []
         real_new_members_count = 0 
         for member in message.new_chat_members:
@@ -646,24 +628,20 @@ async def handle_new_member(message: types.Message):
         
         is_limit_released = False 
         
-        # 2. Taklif qilgan foydalanuvchi hisobini yangilash
-        if inviter_user_id != bot_id: # Bot o'zi qo'shmagan bo'lsa
+        if inviter_user_id != bot_id: 
             
-            # 2.1. Statistikani yangilash (faqat invited_members_count oshiriladi)
             update_user_stats(
                 user_id=inviter_user_id, 
                 chat_id=chat_id, 
                 invited_count_change=real_new_members_count
             )
             
-            # 2.2. Yangilangan statslarni olish va tekshirish
             config = get_config(chat_id) 
             updated_stats = get_user_stats(inviter_user_id, chat_id, config)
             
             required_members = await get_required_members(config, updated_stats['current_ad_cycle_count'])
             current_invited = updated_stats.get('invited_members_count', 0)
             
-            # 2.3. Agar limit yetarlicha bajarilgan bo'lsa, avtomatik yechish
             if required_members > 0 and current_invited >= required_members:
                 
                 remaining_members = current_invited - required_members
@@ -685,22 +663,18 @@ async def handle_new_member(message: types.Message):
                 except Exception as e:
                      print(f"❌ SUCCESS XABAR YUBORISHDA XATO: {e}")
 
-            # 2.4. Agar limit yechilmagan bo'lsa, oddiy hisobni ko'rsatamiz
             if not is_limit_released and inviter_user_id != bot_id:
                  inviter_link = f"[{inviter_full_name}](tg://user?id={inviter_user_id})"
                  welcome_text += f"\n\n**{inviter_link}**, siz **{real_new_members_count}** ta odam qo'shganingiz uchun rahmat! 😊"
 
 
-        # 3. Salomlashish xabarini yuborish
         try:
             sent_message = await message.answer(welcome_text, parse_mode="Markdown")
-            # 4. Bot yozgan xabarni 5.5 minut (330 sekund) keyin o'chirish
             asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
         except Exception as e:
              print(f"❌ SALOMLASHISH XABAR YUBORISHDA XATO: {e}")
              
         
-        # 5. Avtomatik generatsiya qilingan (service) xabarni o'chirish
         try:
             await message.delete() 
         except Exception as e:
@@ -711,14 +685,12 @@ async def handle_group_messages(message: types.Message):
     """Guruhdagi oddiy xabarlarni limit bo'yicha cheklaydi."""
     global bot
     
-    # Guruhda bo'lmasa yoki bot o'zi yuborgan bo'lsa e'tiborsiz qoldiramiz
     if message.chat.type not in ('group', 'supergroup') or message.from_user.id == (await bot.get_me()).id: 
         return 
 
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    # 1. Admin/Creator tekshiruvi (Adminlarga limit qo'llanmaydi)
     try:
         member = await bot.get_chat_member(chat_id, user_id)
         if member.status in [ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR]: 
@@ -726,21 +698,18 @@ async def handle_group_messages(message: types.Message):
     except Exception:
         pass
 
-    # 2. Limit mantiqi
     config = get_config(chat_id) 
     user_stats = get_user_stats(user_id, chat_id, config)
     
     required_members = await get_required_members(config, user_stats['current_ad_cycle_count'])
     
     if required_members == 0:
-        # Bepul reklama davri
         update_user_stats(user_id, chat_id, ad_used=True) 
         return 
 
     current_invited = user_stats.get('invited_members_count', 0)
     
     if current_invited >= required_members:
-        # Limit yechildi
         remaining_members = current_invited - required_members
         
         update_user_stats(user_id, chat_id, ad_used=True, reset_invited=True)
@@ -749,11 +718,8 @@ async def handle_group_messages(message: types.Message):
 
         return 
         
-    # --- LIMIT BUZILGAN: XABARNI O'CHIRISH VA OGOHLANTIRISH ---
-    
     missing = required_members - current_invited
     
-    # Xabarni o'chirish
     try:
         await message.delete() 
     except Exception as e:
@@ -766,7 +732,6 @@ async def handle_group_messages(message: types.Message):
         f"❌ **{user_link}**, siz xabar yuborish qoidalarini buzdingiz! (Limit)\n\n"
         f"Keyingi xabar uchun yana **{missing}** ta odam qo'shing. \n"
         f"Sizning joriy hisobingiz: {current_invited} ta odam.\n\n"
-        f"⚠️ **Eslatma:** Siz yetarli odam qo'shganingizda, bot avtomatik ravishda limitni yechadi."
     )
     
     try:
@@ -775,7 +740,6 @@ async def handle_group_messages(message: types.Message):
             message_text,
             parse_mode="Markdown"
         )
-        # 5.5 daqiqadan keyin ogohlantirish xabarini o'chirish
         asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
     except Exception as e:
         print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA XATO: {e}")
@@ -863,7 +827,7 @@ async def start_bot():
     RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL") 
     if RENDER_EXTERNAL_URL:
         pinger_task = asyncio.create_task(periodic_pinger(RENDER_EXTERNAL_URL))
-        print(f"✅ O'z-o'zini ping qilish (har 3 daqiqada) ishga tushdi: {RENDER_EXTERNAL_URL}")
+        print(f"✅ O'z-o'zini ping qilish (har 10 sekund) ishga tushdi: {RENDER_EXTERNAL_URL}")
     else:
         print("⚠️ RENDER_EXTERNAL_URL topilmadi. Bot uxlab qolishi mumkin.")
 
