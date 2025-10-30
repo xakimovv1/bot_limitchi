@@ -1,7 +1,7 @@
 import json
 import os
 import hashlib
-from datetime import datetime # Xato bartaraf etildi: 'datetime' import qilindi
+from datetime import datetime # 'datetime' import qilindi
 
 # Fayl nomlari
 CONFIG_FILE = 'data/config.json'
@@ -52,9 +52,9 @@ def get_config(chat_id):
             'free_ad_count': 1,         # Bepul reklama soni
             'reset_interval_days': 30,  # Limit tiklanish muddati (kun)
             'invite_levels': {          # Keyingi reklamalar uchun takliflar soni
-                "1": 5,                 # 1-reklama uchun 5 ta odam
-                "2": 10,                # 2-reklama uchun 10 ta odam
-                "max": 15               # Qolgan barchasi uchun 15 ta odam
+                "1": 5,                 
+                "2": 10,                
+                "max": 15               
             }
         }
         _save_data(CONFIG_FILE, configs)
@@ -67,7 +67,7 @@ def update_config(chat_id, key, value):
     chat_id_str = str(chat_id)
     
     if chat_id_str not in configs:
-        get_config(chat_id) # Standart sozlamalarni yaratadi
+        get_config(chat_id) 
         configs = _load_data(CONFIG_FILE) 
         
     configs[chat_id_str][key] = value
@@ -79,8 +79,8 @@ def get_all_chat_configs():
     return list(configs.keys())
 
 def add_new_group(chat_id):
-    """Yangi guruhni limit sozlamalariga qo'shadi (agar yo'q bo'lsa standart sozlamalarni yaratadi)."""
-    get_config(chat_id) # Bu funksiya avtomatik ravishda mavjud bo'lmasa yaratadi
+    """Yangi guruhni limit sozlamalariga qo'shadi."""
+    get_config(chat_id)
 
 
 # --- Foydalanuvchi statistikasi ---
@@ -96,9 +96,9 @@ def get_user_stats(user_id, chat_id, config):
         
     if chat_id_str not in stats[user_id_str]:
         stats[user_id_str][chat_id_str] = {
-            'invited_members_count': 0, # Qo'shgan odamlar soni
-            'ad_cycle_count': 0,        # Reklama yuborish soni (level)
-            'last_reset_date': None     # Limit oxirgi tiklangan sana
+            'invited_members_count': 0, 
+            'ad_cycle_count': 0,        
+            'last_reset_date': None     
         }
         _save_data(USER_STATS_FILE, stats)
 
@@ -115,19 +115,18 @@ def get_user_stats(user_id, chat_id, config):
             user_data['last_reset_date'] = datetime.now().strftime("%Y-%m-%d")
             _save_data(USER_STATS_FILE, stats)
             
-    # Keyinchalik foydalanish uchun qulayroq kalit nomini beramiz
+    # Qulaylik uchun kalit
     user_data['current_ad_cycle_count'] = user_data.get('ad_cycle_count', 0)
             
     return user_data
 
 def update_user_stats(user_id, chat_id, invited_count_change=0, ad_used=False, reset_invited=False):
-    """Foydalanuvchi statistikasini yangilaydi (takliflar soni, reklama yuborish soni)."""
+    """Foydalanuvchi statistikasini yangilaydi."""
     stats = _load_data(USER_STATS_FILE)
     user_id_str = str(user_id)
     chat_id_str = str(chat_id)
     
     if user_id_str not in stats or chat_id_str not in stats[user_id_str]:
-        # Agar statistika yo'q bo'lsa, avval standartini yaratamiz
         get_user_stats(user_id, chat_id, get_config(chat_id))
         stats = _load_data(USER_STATS_FILE)
 
@@ -138,7 +137,6 @@ def update_user_stats(user_id, chat_id, invited_count_change=0, ad_used=False, r
 
     if ad_used:
         user_data['ad_cycle_count'] = user_data.get('ad_cycle_count', 0) + 1
-        # Reklama yuborilganini belgilaymiz, tiklash sanasini yangilaymiz (agar yangilanish kerak bo'lsa)
         if user_data.get('last_reset_date') is None:
              user_data['last_reset_date'] = datetime.now().strftime("%Y-%m-%d")
     
@@ -160,7 +158,6 @@ def get_admin_data(user_id):
     user_id_str = str(user_id)
     
     if user_id_str not in admin_data:
-         # Standart boshlang'ich adminni yaratish (keyinchalik o'zgartiriladi)
          admin_data[user_id_str] = {
              'username': 'admin',
              'password_hash': hash_password('admin')
@@ -174,7 +171,6 @@ def check_admin_credentials(login, password):
     admin_data = _load_data(ADMIN_CREDS_FILE)
     target_hash = hash_password(password)
     
-    # Ma'lumotlar bazasidagi har bir adminni tekshirish
     for user_id_str, data in admin_data.items():
         if data.get('username') == login and data.get('password_hash') == target_hash:
             return data
@@ -207,7 +203,6 @@ def get_required_channels():
 def add_channel(username):
     """Kanalni ro'yxatga qo'shadi."""
     channels = get_required_channels()
-    # Takrorlanmasligini tekshirish
     if not any(c['channel_username'] == username for c in channels):
         channels.append({'channel_username': username})
         _save_data(CHANNELS_FILE, channels)
