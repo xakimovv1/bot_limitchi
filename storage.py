@@ -1,222 +1,243 @@
 import json
 import os
 import hashlib
-from datetime import datetime # 'datetime' import qilindi
+from datetime import datetime, timedelta
 
-# Fayl nomlari
-CONFIG_FILE = 'data/config.json'
-USER_STATS_FILE = 'data/user_stats.json'
-ADMIN_CREDS_FILE = 'data/admin_creds.json'
-CHANNELS_FILE = 'data/channels.json'
+# Fayl yo'llari (Renderda saqlash uchun)
+CONFIG_FILE = 'config.json'
+STATS_FILE = 'stats.json'
+ADMINS_FILE = 'admins.json'
+CHANNELS_FILE = 'channels.json'
 
-# Ma'lumotlar saqlanadigan papka
-DATA_DIR = 'data'
+# --- Yordamchi Funksiyalar ---
 
 def _load_data(file_path, default_value=None):
-    """Fayldan JSON ma'lumotlarni yuklash."""
+    """JSON fayldan ma'lumot yuklaydi."""
     if default_value is None:
         default_value = {}
         
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-        
-    if not os.path.exists(file_path):
-        _save_data(file_path, default_value)
-        return default_value
-    
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        else:
+            _save_data(file_path, default_value)
+            return default_value
     except (json.JSONDecodeError, FileNotFoundError):
         return default_value
 
 def _save_data(file_path, data):
-    """JSON ma'lumotlarni faylga saqlash."""
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-        
+    """JSON faylga ma'lumot saqlaydi."""
     with open(file_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
+        json.dump(data, f, indent=4)
 
+def _hash_password(password):
+    """Parolni SHA-256 bilan hashlaydi."""
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# --- Guruh konfiguratsiyasi (Limit sozlamalari) ---
+# --- Guruh Sozlamalari (config.json) ---
 
 def get_config(chat_id):
-    """Guruh konfiguratsiyasini yuklaydi, mavjud bo'lmasa standart qiymatlarni beradi."""
-    configs = _load_data(CONFIG_FILE)
+    """Berilgan chat ID uchun sozlamalarni oladi yoki standart sozlamalarni qaytaradi."""
     chat_id_str = str(chat_id)
+    data = _load_data(CONFIG_FILE)
     
-    if chat_id_str not in configs:
-        # Standart sozlamalar
-        configs[chat_id_str] = {
-            'free_ad_count': 1,         # Bepul reklama soni
-            'reset_interval_days': 30,  # Limit tiklanish muddati (kun)
-            'invite_levels': {          # Keyingi reklamalar uchun takliflar soni
-                "1": 5,                 
-                "2": 10,                
-                "max": 15               
-            }
+    # Standart sozlamalar
+    if chat_id_str not in data:
+        data[chat_id_str] = {
+            'free_ad_count': 1,           # Nechta xabar bepul ruxsat etiladi
+            'reset_interval_days': 30,    # Hisob necha kunda tiklanadi
+            'invite_levels': {'1': 5, '2': 7, 'max': 10} # 1-xabar uchun 5, 2-xabar uchun 7, qolganlariga 10
         }
-        _save_data(CONFIG_FILE, configs)
+        _save_data(CONFIG_FILE, data)
         
-    return configs[chat_id_str]
+    return data[chat_id_str]
 
 def update_config(chat_id, key, value):
-    """Guruh konfiguratsiyasini yangilaydi."""
-    configs = _load_data(CONFIG_FILE)
+    """Guruh sozlamalarini yangilaydi."""
     chat_id_str = str(chat_id)
+    data = _load_data(CONFIG_FILE)
     
-    if chat_id_str not in configs:
-        get_config(chat_id) 
-        configs = _load_data(CONFIG_FILE) 
-        
-    configs[chat_id_str][key] = value
-    _save_data(CONFIG_FILE, configs)
-    
+    if chat_id_str not in data:
+        get_config(chat_id)
+
+    data[chat_id_str][key] = value
+    _save_data(CONFIG_FILE, data)
+
 def get_all_chat_configs():
-    """Barcha konfiguratsiya ID'larini (guruh ID'larini) qaytaradi."""
-    configs = _load_data(CONFIG_FILE)
-    return list(configs.keys())
+    """Barcha sozlamalar o'rnatilgan guruh IDlarini qaytaradi."""
+    return list(_load_data(CONFIG_FILE).keys())
 
 def add_new_group(chat_id):
-    """Yangi guruhni limit sozlamalariga qo'shadi."""
+    """Yangi guruhni standart sozlamalar bilan qo'shadi."""
     get_config(chat_id)
 
+def delete_group(chat_id):
+    """Guruh sozlamalarini va unga tegishli statistikani o'chiradi."""
+    chat_id_str = str(chat_id)
+    config_data = _load_data(CONFIG_FILE)
+    stats_data = _load_data(STATS_FILE)
+    
+    if chat_id_str in config_data:
+        del config_data[chat_id_str]
+        _save_data(CONFIG_FILE, config_data)
+        
+    stats_data = {
+        user_id: stats for user_id, stats in stats_data.items() 
+        if chat_id_str not in stats
+    }
+    _save_data(STATS_FILE, stats_data)
+    
+# --- Foydalanuvchi Statistikasi (stats.json) ---
 
-# --- Foydalanuvchi statistikasi ---
+def _check_and_reset_stats(user_id, chat_id, user_stats, config):
+    """Limit tiklanish vaqti kelganini tekshiradi va tiklaydi."""
+    reset_interval_days = config.get('reset_interval_days', 30)
+    
+    if 'last_reset_date' not in user_stats or not user_stats['last_reset_date']:
+        return user_stats
+
+    last_reset = datetime.strptime(user_stats['last_reset_date'], '%Y-%m-%d')
+    if datetime.now() >= last_reset + timedelta(days=reset_interval_days):
+        user_stats['current_ad_cycle_count'] = 0
+        user_stats['invited_members_count'] = 0
+        user_stats['last_reset_date'] = datetime.now().strftime('%Y-%m-%d')
+    
+    return user_stats
 
 def get_user_stats(user_id, chat_id, config):
-    """Foydalanuvchi statistikasini yuklaydi va kerak bo'lsa tiklaydi."""
-    stats = _load_data(USER_STATS_FILE)
+    """Foydalanuvchi statistikasini oladi va kerak bo'lsa tiklaydi."""
     user_id_str = str(user_id)
     chat_id_str = str(chat_id)
+    data = _load_data(STATS_FILE)
     
-    if user_id_str not in stats:
-        stats[user_id_str] = {}
+    if user_id_str not in data:
+        data[user_id_str] = {}
         
-    if chat_id_str not in stats[user_id_str]:
-        stats[user_id_str][chat_id_str] = {
-            'invited_members_count': 0, 
-            'ad_cycle_count': 0,        
-            'last_reset_date': None     
+    if chat_id_str not in data[user_id_str]:
+        data[user_id_str][chat_id_str] = {
+            'current_ad_cycle_count': 0, # Joriy tsiklda yuborilgan xabarlar soni
+            'invited_members_count': 0,  # Qo'shilgan odamlar soni
+            'last_reset_date': datetime.now().strftime('%Y-%m-%d')
         }
-        _save_data(USER_STATS_FILE, stats)
 
-    user_data = stats[user_id_str][chat_id_str]
-    reset_interval = config.get('reset_interval_days', 30)
+    from main import get_config as get_default_config # main.py ga bog'liqlikni minimallashtirish
+    # Tiklanishni tekshirish
+    data[user_id_str][chat_id_str] = _check_and_reset_stats(
+        user_id_str, chat_id_str, data[user_id_str][chat_id_str], config
+    )
     
-    # Tiklash mantiqi (Agar limit muddati tugagan bo'lsa)
-    last_reset = user_data.get('last_reset_date')
-    if last_reset:
-        last_reset_dt = datetime.strptime(last_reset, "%Y-%m-%d")
-        if (datetime.now() - last_reset_dt).days >= reset_interval:
-            user_data['invited_members_count'] = 0
-            user_data['ad_cycle_count'] = 0
-            user_data['last_reset_date'] = datetime.now().strftime("%Y-%m-%d")
-            _save_data(USER_STATS_FILE, stats)
-            
-    # Qulaylik uchun kalit
-    user_data['current_ad_cycle_count'] = user_data.get('ad_cycle_count', 0)
-            
-    return user_data
+    _save_data(STATS_FILE, data)
+    return data[user_id_str][chat_id_str]
 
 def update_user_stats(user_id, chat_id, invited_count_change=0, ad_used=False, reset_invited=False):
     """Foydalanuvchi statistikasini yangilaydi."""
-    stats = _load_data(USER_STATS_FILE)
     user_id_str = str(user_id)
     chat_id_str = str(chat_id)
+    data = _load_data(STATS_FILE)
     
-    if user_id_str not in stats or chat_id_str not in stats[user_id_str]:
-        get_user_stats(user_id, chat_id, get_config(chat_id))
-        stats = _load_data(USER_STATS_FILE)
+    if user_id_str not in data: data[user_id_str] = {}
+    if chat_id_str not in data[user_id_str]:
+        # Agar stats mavjud bo'lmasa, uni yaratish uchun config kerak.
+        # Lekin bu funksiya faqat update qilishi kerak, shuning uchun faqat mavjudini yangilaymiz.
+        pass
+        
+    stats = data.get(user_id_str, {}).get(chat_id_str, {})
+    if not stats:
+        # Agar statistika umuman yo'q bo'lsa, uni yaratishga urinmaymiz (update qilamiz xolos)
+        return
 
-    user_data = stats[user_id_str][chat_id_str]
-    
     if invited_count_change != 0:
-        user_data['invited_members_count'] = user_data.get('invited_members_count', 0) + invited_count_change
-
+        stats['invited_members_count'] += invited_count_change
+        
     if ad_used:
-        user_data['ad_cycle_count'] = user_data.get('ad_cycle_count', 0) + 1
-        if user_data.get('last_reset_date') is None:
-             user_data['last_reset_date'] = datetime.now().strftime("%Y-%m-%d")
-    
+        stats['current_ad_cycle_count'] += 1
+        
     if reset_invited:
-        user_data['invited_members_count'] = 0
+        stats['invited_members_count'] = 0
+        
+    data[user_id_str][chat_id_str] = stats
+    _save_data(STATS_FILE, data)
 
-    _save_data(USER_STATS_FILE, stats)
-
-
-# --- Admin ma'lumotlari ---
-
-def hash_password(password):
-    """Parolni himoyalash uchun SHA256 bilan hashlaydi."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def get_admin_data(user_id):
-    """Admin ma'lumotlarini yuklaydi."""
-    admin_data = _load_data(ADMIN_CREDS_FILE)
-    user_id_str = str(user_id)
-    
-    if user_id_str not in admin_data:
-         admin_data[user_id_str] = {
-             'username': 'admin',
-             'password_hash': hash_password('admin')
-         }
-         _save_data(ADMIN_CREDS_FILE, admin_data)
-
-    return admin_data[user_id_str]
+# --- Admin Kirish Ma'lumotlari (admins.json) ---
 
 def check_admin_credentials(login, password):
-    """Login va parolni tekshiradi."""
-    admin_data = _load_data(ADMIN_CREDS_FILE)
-    target_hash = hash_password(password)
+    """Login va parolni tekshiradi va agar to'g'ri bo'lsa, admin ma'lumotlarini qaytaradi."""
+    data = _load_data(ADMINS_FILE)
     
-    for user_id_str, data in admin_data.items():
-        if data.get('username') == login and data.get('password_hash') == target_hash:
-            return data
-            
+    # Default adminni yaratish
+    if not data or 'default_admin' not in data:
+        data['default_admin'] = {
+            'username': 'admin',
+            'password_hash': _hash_password('12345'),
+            'user_id': None
+        }
+        _save_data(ADMINS_FILE, data)
+
+    hashed_password = _hash_password(password)
+
+    for key, admin in data.items():
+        if admin['username'] == login and admin['password_hash'] == hashed_password:
+            return admin
     return None
 
-def set_admin_data(user_id, username=None, password_hash=None):
-    """Admin login yoki parolini yangilaydi."""
-    admin_data = _load_data(ADMIN_CREDS_FILE)
-    user_id_str = str(user_id)
+def get_admin_data(user_id):
+    """Telegram ID bo'yicha admin ma'lumotlarini oladi."""
+    data = _load_data(ADMINS_FILE)
     
-    if user_id_str not in admin_data:
-        admin_data[user_id_str] = {}
-        
-    if username is not None:
-        admin_data[user_id_str]['username'] = username
-        
-    if password_hash is not None:
-        admin_data[user_id_str]['password_hash'] = hash_password(password_hash)
+    for admin_id, admin in data.items():
+        if admin.get('user_id') == user_id:
+            return admin
+    return {}
 
-    _save_data(ADMIN_CREDS_FILE, admin_data)
+def set_admin_data(user_id, username=None, password_hash=None):
+    """Admin ma'lumotlarini (login, parol, telegram ID) yangilaydi."""
+    data = _load_data(ADMINS_FILE)
 
+    admin_key = None
+    for key, admin in data.items():
+        if admin.get('user_id') == user_id:
+            admin_key = key
+            break
 
-# --- Majburiy obuna kanallari ---
+    if admin_key:
+        if username: data[admin_key]['username'] = username
+        if password_hash: data[admin_key]['password_hash'] = _hash_password(password_hash)
+        if user_id: data[admin_key]['user_id'] = user_id
+    else:
+        new_key = str(user_id)
+        data[new_key] = {
+            'username': username or 'new_admin',
+            'password_hash': _hash_password(password_hash or '12345'),
+            'user_id': user_id
+        }
+    
+    _save_data(ADMINS_FILE, data)
+
+# --- Majburiy Kanallar (channels.json) ---
 
 def get_required_channels():
-    """Majburiy obuna kanallari ro'yxatini yuklaydi."""
+    """Majburiy kanallar ro'yxatini oladi."""
     return _load_data(CHANNELS_FILE, default_value=[])
 
 def add_channel(username):
-    """Kanalni ro'yxatga qo'shadi."""
-    channels = get_required_channels()
-    if not any(c['channel_username'] == username for c in channels):
-        channels.append({'channel_username': username})
-        _save_data(CHANNELS_FILE, channels)
+    """Yangi majburiy kanal qo'shadi."""
+    data = _load_data(CHANNELS_FILE, default_value=[])
+    
+    if not any(c['channel_username'] == username for c in data):
+        data.append({'channel_username': username})
+        _save_data(CHANNELS_FILE, data)
         return True
     return False
 
 def delete_channel(username):
-    """Kanalni ro'yxatdan o'chiradi."""
-    channels = get_required_channels()
-    original_len = len(channels)
+    """Majburiy kanalni ro'yxatdan o'chiradi."""
+    data = _load_data(CHANNELS_FILE, default_value=[])
     
-    channels = [c for c in channels if c['channel_username'] != username]
+    initial_length = len(data)
+    data = [c for c in data if c['channel_username'] != username]
     
-    if len(channels) < original_len:
-        _save_data(CHANNELS_FILE, channels)
+    if len(data) < initial_length:
+        _save_data(CHANNELS_FILE, data)
         return True
     return False
