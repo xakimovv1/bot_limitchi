@@ -18,15 +18,15 @@ from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 
 # Web server va HTTP so'rovlar uchun kutubxona (Render uchun)
 from aiohttp import web, ClientSession 
+from aiohttp.client_exceptions import ClientConnectorError
 
 # --- storage faylini import qilamiz ---
-# Iltimos, ushbu fayl asosiy fayl bilan bir xil joyda ekanligiga ishonch hosil qiling.
 try:
     from storage import (
         get_config, update_config, get_user_stats, update_user_stats,
         check_admin_credentials, get_admin_data, set_admin_data,
         get_required_channels, add_channel, delete_channel, get_all_chat_configs,
-        add_new_group
+        add_new_group, delete_group
     )
 except ImportError:
     print("❌ Xato: 'storage.py' fayli topilmadi. Ma'lumotlar bazasi mantig'i uchun bu fayl zarur.")
@@ -34,59 +34,42 @@ except ImportError:
 
 load_dotenv()
 
-# --- BOT INITS ---
+# --- KONFIGURATSIYA O'ZGARUVCHILARI ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
-# Renderda o'z-o'zini ping qilish uchun URL (.env da o'rnatilishi kerak)
-RENDER_URL_FOR_PING = os.getenv("RENDER_URL_FOR_PING") 
-WEB_SERVER_PORT = int(os.getenv("PORT", 10000)) # Render PORT muhit o'zgaruvchisidan oladi
+# Render muhit o'zgaruvchisidan portni oladi
+WEB_SERVER_PORT = int(os.environ.get("PORT", 8080))
+# Botni uxlab qolishdan saqlash uchun o'zingizning Render URL'ingiz
+RENDER_URL_FOR_PING = os.getenv("RENDER_URL_FOR_PING") # Masalan: https://my-bot.onrender.com
 
 try:
-    ADMIN_TELEGRAM_ID = int(ADMIN_TELEGRAM_ID)
+    if ADMIN_TELEGRAM_ID:
+        ADMIN_TELEGRAM_ID = int(ADMIN_TELEGRAM_ID)
 except:
     ADMIN_TELEGRAM_ID = None
-    print("⚠️ ADMIN_TELEGRAM_ID .env da topilmadi yoki raqam emas!")
+    
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN .env faylida topilmadi!")
 
-bot = None
-dp = None
-
-# --- RENDER PINGER MANTIQI (Render serverni uyg'oq ushlab turish uchun) ---
-
-async def handle_ping(request):
-    """Render'dan kelgan soxta so'rovlarga javob beradi (botni uyg'otib turish uchun)."""
-    return web.Response(text="Bot is awake and polling!")
-
-async def periodic_pinger(url, interval_seconds=300): # Har 5 daqiqada (300 soniya)
-    """Berilgan URL manzilga har 5 daqiqada so'rov yuboradi (o'zini-o'zi uyg'otish)."""
-    if not url:
-        print("❌ RENDER_URL_FOR_PING o'rnatilmagan. Pinger ishga tushmaydi.")
-        return
-
-    async with ClientSession() as session:
-        while True:
-            await asyncio.sleep(interval_seconds)
-            try:
-                # O'z-o'ziga soxta GET so'rovini yuborish
-                async with session.get(url) as response:
-                    print(f"🤖 Ping yuborildi. Status: {response.status}")
-            except Exception as e:
-                print(f"❌ Ping yuborishda xato: {e}")
-
+# --- BOT VA DISPATCHER INITS ---
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+dp = Dispatcher()
 
 # --- BOT YORDAMCHI FUNKSIYALARI ---
-
-async def delete_message_later(chat_id, message_id, delay=330):
-    """Xabarni belgilangan vaqt (sekund) o'tgach o'chiradi (5.5 daqiqa = 330 sekund)."""
-    await asyncio.sleep(delay)
-    try:
-        await bot.delete_message(chat_id, message_id)
-    except Exception:
-        pass
+def delete_message_later(chat_id, message_id, delay=330):
+    """Xabarni belgilangan vaqt o'tgach o'chiradi (5.5 daqiqa = 330 sekund)."""
+    async def delete_task():
+        await asyncio.sleep(delay)
+        try:
+            await bot.delete_message(chat_id, message_id)
+        except Exception:
+            pass
+    asyncio.create_task(delete_task())
 
 async def notify_admin_about_error(chat_id, error_message, action_name):
-    """Xatolik haqida adminni ogohlantiradi."""
+    """Xatolik haqida adminni ogohlantiradi (agar ID o'rnatilgan bo'lsa)."""
     global ADMIN_TELEGRAM_ID, bot
-    if ADMIN_TELEGRAM_ID and bot:
+    if ADMIN_TELEGRAM_ID and isinstance(ADMIN_TELEGRAM_ID, int) and bot: 
         message = (
             f"❌ **KRITIK GURUH XATOSI**\n"
             f"Guruh ID: <code>{chat_id}</code>\n"
@@ -98,6 +81,7 @@ async def notify_admin_about_error(chat_id, error_message, action_name):
             await bot.send_message(ADMIN_TELEGRAM_ID, message, parse_mode="HTML")
         except Exception as e:
             print(f"❌ Adminni ogohlantirishda xato: {e}")
+
 
 # --- FSM HOLATLARI ---
 class AdminStates(StatesGroup):
@@ -119,23 +103,31 @@ class AdminStates(StatesGroup):
 
 
 # --- FILTRLAR VA FUNKSIYALARI ---
-
 async def get_required_members(config, ad_cycle_count):
     """Foydalanuvchi reklama tashlash uchun qancha odam taklif qilishi kerakligini hisoblaydi."""
-
     if ad_cycle_count < config.get('free_ad_count', 1):
         return 0
 
     current_level = ad_cycle_count - config.get('free_ad_count', 1) + 1
     invite_levels = config.get('invite_levels', {})
 
-    return invite_levels.get(str(current_level), invite_levels.get('max', 10))
+    # Level nomini strga aylantiramiz
+    required_count = invite_levels.get(str(current_level), invite_levels.get('max', 10))
+    
+    # Agar required_count mavjud bo'lmasa, max qiymatini olish
+    if required_count is None:
+         required_count = invite_levels.get('max', 10)
 
+    # Natijani int ga aylantiramiz
+    try:
+        return int(required_count)
+    except ValueError:
+        return invite_levels.get('max', 10) # Noto'g'ri level qiymati bo'lsa default qaytarish
 
 # --- ADMIN PANEL INTERFEYSI (Tugmalar) ---
+# ... (Bu qism o'zgarishsiz qoladi) ...
 
 def get_admin_main_menu():
-    """Asosiy admin menusi tugmalarini yaratadi."""
     builder = InlineKeyboardBuilder()
     builder.button(text="📺 Kanallar", callback_data="admin_channels")
     builder.button(text="📊 Limit", callback_data="admin_settings_groups")
@@ -145,14 +137,15 @@ def get_admin_main_menu():
     return builder.as_markup()
 
 async def get_group_list_keyboard():
-    """Limit sozlamalari uchun Guruhlar va Kanallar ro'yxatini yuklaydi."""
     builder = InlineKeyboardBuilder()
     chat_ids = get_all_chat_configs()
+    
     if chat_ids:
         for chat_id_str in chat_ids:
             chat_id = int(chat_id_str)
             button_text = f"⚙️ Guruh ID: {chat_id}"
             builder.button(text=button_text, callback_data=f"select_chat:{chat_id}")
+            builder.button(text="🗑️", callback_data=f"delete_chat:{chat_id}")
 
     if not chat_ids:
           builder.button(text="❌ Guruhlar topilmadi.", callback_data="ignore")
@@ -160,13 +153,11 @@ async def get_group_list_keyboard():
     builder.button(text="➕ Guruh qo'shish", callback_data="add_new_group_for_limit")
     builder.button(text="⬅️ Bosh Menyu", callback_data="admin_main_menu")
 
-    builder.adjust(1)
+    builder.adjust(2, repeat=True)
     return builder.as_markup()
 
 def get_chat_settings_keyboard(chat_id, config):
-    """Guruhning joriy sozlamalarini ko'rsatuvchi tugmalar menyusi."""
     builder = InlineKeyboardBuilder()
-
     builder.button(
         text=f"Bepul reklama soni: {config.get('free_ad_count', 1)} 🔄",
         callback_data=f"set_ad_count:{chat_id}"
@@ -184,7 +175,6 @@ def get_chat_settings_keyboard(chat_id, config):
     return builder.as_markup()
 
 def get_invite_levels_keyboard(chat_id, invite_levels: dict):
-    """Taklif level'larini ko'rsatish va ularni o'zgartirish uchun tugmalar menyusi."""
     builder = InlineKeyboardBuilder()
     sorted_keys = [k for k in invite_levels if k != 'max']
     try:
@@ -210,11 +200,9 @@ def get_invite_levels_keyboard(chat_id, invite_levels: dict):
     builder.button(text="⬅️ Guruh sozlamalariga", callback_data=f"select_chat:{chat_id}")
 
     builder.adjust(2, repeat=True)
-
     return builder.as_markup()
 
 def get_admin_credentials_keyboard(admin_data):
-    """Login/parol sozlamalari menyusi."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Loginni o'zgartirish", callback_data="change_login")
     builder.button(text="🔒 Parolni o'zgartirish", callback_data="change_password")
@@ -223,7 +211,6 @@ def get_admin_credentials_keyboard(admin_data):
     return builder.as_markup()
 
 async def get_channels_keyboard(channels):
-    """Kanallar ro'yxati va Qo'shish/O'chirish tugmalari."""
     builder = InlineKeyboardBuilder()
     if channels:
         for channel in channels:
@@ -240,15 +227,18 @@ async def get_channels_keyboard(channels):
 
 
 # --- MESSAGE HANDLERS (Login/Parol va FSM) ---
+# ... (Bu qism o'zgarishsiz qoladi, yuqoridagi kodni o'z ichiga oladi) ...
 
 async def handle_start(message: types.Message, state: FSMContext):
-    """Botni /start buyrug'i bilan ishga tushirish (admin tekshiruvi)."""
-    if message.from_user.id == ADMIN_TELEGRAM_ID:
-        await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
-        await state.set_state(AdminStates.in_admin_panel)
-        return
+    """Botni /start buyrug'i bilan ishga tushirish (FAQAT login/parol orqali tekshirish)."""
+    if message.chat.type != 'private':
+        return 
 
-    admin = get_admin_data(message.from_user.id)
+    await state.clear()
+    user_id = message.from_user.id
+    
+    admin = get_admin_data(user_id)
+    
     if admin.get('username') and admin.get('password_hash'):
         await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
         await state.set_state(AdminStates.in_admin_panel)
@@ -271,7 +261,7 @@ async def process_password(message: types.Message, state: FSMContext):
     admin_data = check_admin_credentials(login, password)
 
     if admin_data:
-        set_admin_data(user_id, login, password)
+        set_admin_data(user_id, login=admin_data['username'], password_hash=password) # user_id ni bog'lash uchun
         await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
         await state.set_state(AdminStates.in_admin_panel)
     else:
@@ -457,10 +447,16 @@ async def process_new_admin_password(message: types.Message, state: FSMContext):
     )
 
 # --- CALLBACK QUERY HANDLER ---
+# ... (Bu qism o'zgarishsiz qoladi) ...
 
 async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
     data = call.data
     admin = get_admin_data(call.from_user.id) or {}
+    
+    current_state = await state.get_state()
+    if current_state != AdminStates.in_admin_panel and data not in ["admin_logout"]:
+         await call.answer("Iltimos, avval /start orqali tizimga kiring.", show_alert=True)
+         return
 
     if data == "admin_main_menu":
         await state.set_state(AdminStates.in_admin_panel)
@@ -494,6 +490,17 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         await call.answer(f"Guruh {chat_id} tanlandi.")
+    elif data.startswith("delete_chat:"):
+        chat_id = int(data.split(":")[1])
+        delete_group(chat_id)
+
+        await call.answer(f"✅ Guruh {chat_id} o'chirildi va ma'lumotlari tozalandi.", show_alert=True)
+        await call.message.edit_text(
+            "📊 **Limit Sozlamalari**\nIltimos, sozlamoqchi bo'lgan guruhni tanlang:",
+            reply_markup=await get_group_list_keyboard(),
+            parse_mode="HTML"
+        )
+
     elif data.startswith("set_ad_count:") or data.startswith("set_reset_interval:"):
         await state.update_data(current_chat_id=int(data.split(":")[1]))
         if data.startswith("set_ad_count:"):
@@ -595,8 +602,8 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
     else:
         await call.answer("Boshqa buyruq topilmadi.", show_alert=False)
 
-
 # --- GURUH HANDLERS ---
+# ... (Bu qism o'zgarishsiz qoladi) ...
 
 async def handle_new_member(message: types.Message):
     """Guruhga qo'shilgan yangi a'zolarni qutlaydi, takliflarni hisoblaydi va avtomatik limitni yechadi."""
@@ -666,8 +673,11 @@ async def handle_new_member(message: types.Message):
                 )
                 try:
                     await bot.send_message(chat_id, success_text, parse_mode="Markdown")
+                except TelegramRetryAfter as e:
+                    # Agar bu xabar ham Floodga tushsa, shunchaki kutmaymiz va bekor qilamiz
+                    print(f"❌ SUCCESS XABAR YUBORISHDA XATO (Flood Control): {e.retry_after} soniya kutilyapti...")
                 except Exception as e:
-                    print(f"❌ SUCCESS XABAR YUBORISHDA XATO: {e}")
+                    print(f"❌ SUCCESS XABAR YUBORISHDA NOMA'LUM XATO: {e}")
 
             if not is_limit_released and inviter_user_id != bot_id:
                  inviter_link = f"[{inviter_full_name}](tg://user?id={inviter_user_id})"
@@ -676,7 +686,7 @@ async def handle_new_member(message: types.Message):
 
         try:
             sent_message = await message.answer(welcome_text, parse_mode="Markdown")
-            asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
+            delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330) 
         except Exception as e:
              print(f"❌ SALOMLASHISH XABAR YUBORISHDA XATO: {e}")
 
@@ -688,7 +698,7 @@ async def handle_new_member(message: types.Message):
 
 
 async def handle_group_messages(message: types.Message):
-    """Guruhdagi oddiy xabarlarni limit bo'yicha cheklaydi (Flood Control to'g'irlangan)."""
+    """Guruhdagi oddiy xabarlarni limit bo'yicha cheklaydi."""
     global bot
 
     if message.chat.type not in ('group', 'supergroup') or message.from_user.id == (await bot.get_me()).id:
@@ -740,35 +750,22 @@ async def handle_group_messages(message: types.Message):
         f"Sizning joriy hisobingiz: {current_invited} ta odam.\n\n"
     )
     
-    # 🛑 FLOOD CONTROL NI HAL QILISH UCHUN TRY-EXCEPT BLOKI
+    # --- FLOOD CONTROL TO'G'IRLASH QISMI ---
     try:
         sent_message = await bot.send_message(
             chat_id,
             message_text,
             parse_mode="Markdown"
         )
-        asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
+        delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330) 
 
     except TelegramRetryAfter as e:
-        # Telegram Flood Control'ni so'radi. So'ralgan vaqtcha kutamiz.
-        print(f"⚠️ Flood Control: {e.retry_after} soniya kutilyapti...")
-        await asyncio.sleep(e.retry_after) 
-        
-        # Kutib bo'lgach, xabarni qayta yuborishga urinish
-        try:
-            sent_message = await bot.send_message(
-                chat_id,
-                message_text,
-                parse_mode="Markdown"
-            )
-            asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
-
-        except Exception as retry_e:
-            print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA XATO (Qayta urinish): {retry_e}")
-
+        # Xato kelganda, kutmaymiz, faqat ogohlantirishni bekor qilamiz
+        print(f"⚠️ Flood Control: {e.retry_after} soniya kutilyapti (Ogohlantirish bekor qilindi).")
+        pass
     except Exception as e:
-        # Boshqa noma'lum xatolar
         print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA NOMA'LUM XATO: {e}")
+    # ----------------------------------------
 
 
 async def handle_my_id_command(message: types.Message):
@@ -777,10 +774,9 @@ async def handle_my_id_command(message: types.Message):
         await message.reply(f"Sizning ID raqamingiz:\n`{message.from_user.id}`\n\n"
                             f"Agar guruhda yozgan bo'lsangiz, guruh IDsi:\n`{message.chat.id}`", parse_mode="Markdown")
 
-# --- ISHGA TUSHIRISH MANTIQI (aiogram 3.x) ---
+# --- HANDLERLARNI DISPATCHERGA ULASH FUNKSIYASI ---
 
 def setup_handlers(dp: Dispatcher):
-
     # MESSAGE HANDLERS
     dp.message.register(handle_start, Command("start"))
     dp.message.register(handle_my_id_command, Command("myid"))
@@ -812,14 +808,36 @@ def setup_handlers(dp: Dispatcher):
     dp.callback_query.register(handle_admin_callbacks)
 
 
-async def start_polling():
-    """Botning Telegram serveri bilan ulanishini boshlaydi."""
-    global bot, dp
-    print("🚀 Bot Polling (Telegram so'rovlari) ishga tushdi.")
-    await dp.start_polling(bot)
+# --- RENDER/AIOHTTP SERVER FUNKSIYALARI ---
+
+async def handle_ping(request):
+    """Render tomonidan botni uyg'otish uchun yuboriladigan so'rovlarga javob beradi."""
+    return web.Response(text="Bot is awake! 🤖")
+
+async def pinger():
+    """Render botini uxlab qolishdan saqlash uchun o'ziga o'zi so'rov yuborib turadi."""
+    if not RENDER_URL_FOR_PING:
+        print("⚠️ RENDER_URL_FOR_PING o'rnatilmagan. Pinger ishga tushmaydi. Bot 15 daqiqadan so'ng uxlab qolishi mumkin.")
+        return
+
+    # Render 15 daqiqada uxlab qoladi, shuning uchun 10 daqiqada ping yuboriladi (600 soniya)
+    while True:
+        await asyncio.sleep(600)
+        try:
+            async with ClientSession() as session:
+                async with session.get(RENDER_URL_FOR_PING + "/ping") as response:
+                    if response.status == 200:
+                        print(f"✅ Bot pinglandi. Status: {response.status}")
+                    else:
+                        print(f"❌ Ping xatosi: {response.status}")
+        except ClientConnectorError:
+             # Ulanish xatosi bo'lsa, xavotir olmang, keyingi safar harakat qilamiz
+             print("❌ Ping ulanish xatosi (Render uxlayotgan bo'lishi mumkin).")
+        except Exception as e:
+            print(f"❌ Pingerda kutilmagan xato: {e}")
 
 async def start_server():
-    """Veb-serverni ishga tushiradi (Renderning 'always on' bo'lishi uchun)."""
+    """Aiohttp veb-serverini ishga tushiradi."""
     global WEB_SERVER_PORT
 
     app = web.Application()
@@ -842,29 +860,32 @@ async def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN .env faylida topilmadi!")
         return
+    
+    # Webhookni o'chirib qo'yamiz, chunki Renderda Polling ishlatiladi
+    try:
+        await bot.delete_webhook()
+        print("🗑️ Webhook o'chirildi.")
+    except Exception as e:
+         print(f"🗑️ Webhook o'chirishda xato bo'ldi: {e}")
 
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher()
-
-    setup_handlers(dp) # Handlers ni sozlaymiz
+    # Handlers ni sozlaymiz
+    setup_handlers(dp) 
 
     # 1. Veb-serverni ishga tushiramiz (Render kirish so'rovlarini qabul qilish uchun)
     await start_server()
 
     # 2. Render pingerini ishga tushiramiz (Botni uxlab qolishdan saqlash uchun)
-    if RENDER_URL_FOR_PING:
-        # Pinger vazifasini alohida task sifatida boshlaymiz
-        asyncio.create_task(periodic_pinger(RENDER_URL_FOR_PING))
+    asyncio.create_task(pinger())
 
-    # 3. Bot Pollingni ishga tushiramiz (Telegramdan xabarlarni qabul qilish uchun)
-    await start_polling()
+    # 3. Pollingni ishga tushiramiz (Bot xabarlarni olib turishi uchun)
+    print("🚀 Bot Polling rejimida ishga tushdi.")
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     try:
-        # Barcha asinxron funksiyalarni ishga tushirish
         asyncio.run(main())
     except KeyboardInterrupt:
         print("Bot o'chirildi.")
     except Exception as e:
-        print(f"Kritik xato: {e}")
+        print(f"❌ Kritikal xato: {e}")
