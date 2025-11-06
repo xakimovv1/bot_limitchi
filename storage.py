@@ -1,13 +1,12 @@
 import json
 import os
-import hashlib
 from datetime import datetime, timedelta
 
 # Fayl yo'llari (Renderda saqlash uchun)
 CONFIG_FILE = 'config.json'
 STATS_FILE = 'stats.json'
-ADMINS_FILE = 'admins.json'
-CHANNELS_FILE = 'channels.json'
+# ADMINS_FILE olib tashlandi
+CHANNELS_FILE = 'channels.json' # Majburiy kanallar mantiqi saqlanib qoldi
 
 # --- Yordamchi Funksiyalar ---
 
@@ -31,10 +30,6 @@ def _save_data(file_path, data):
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
-def _hash_password(password):
-    """Parolni SHA-256 bilan hashlaydi."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
 # --- Guruh Sozlamalari (config.json) ---
 
 def get_config(chat_id):
@@ -45,8 +40,8 @@ def get_config(chat_id):
     # Standart sozlamalar
     if chat_id_str not in data:
         data[chat_id_str] = {
-            'free_ad_count': 1,           # Nechta xabar bepul ruxsat etiladi
-            'reset_interval_days': 30,    # Hisob necha kunda tiklanadi
+            'free_ad_count': 1,             # Nechta xabar bepul ruxsat etiladi
+            'reset_interval_days': 30,      # Hisob necha kunda tiklanadi
             'invite_levels': {'1': 5, '2': 7, 'max': 10} # 1-xabar uchun 5, 2-xabar uchun 7, qolganlariga 10
         }
         _save_data(CONFIG_FILE, data)
@@ -121,7 +116,6 @@ def get_user_stats(user_id, chat_id, config):
             'last_reset_date': datetime.now().strftime('%Y-%m-%d')
         }
 
-    from main import get_config as get_default_config # main.py ga bog'liqlikni minimallashtirish
     # Tiklanishni tekshirish
     data[user_id_str][chat_id_str] = _check_and_reset_stats(
         user_id_str, chat_id_str, data[user_id_str][chat_id_str], config
@@ -137,15 +131,10 @@ def update_user_stats(user_id, chat_id, invited_count_change=0, ad_used=False, r
     data = _load_data(STATS_FILE)
     
     if user_id_str not in data: data[user_id_str] = {}
-    if chat_id_str not in data[user_id_str]:
-        # Agar stats mavjud bo'lmasa, uni yaratish uchun config kerak.
-        # Lekin bu funksiya faqat update qilishi kerak, shuning uchun faqat mavjudini yangilaymiz.
-        pass
-        
+    
     stats = data.get(user_id_str, {}).get(chat_id_str, {})
     if not stats:
-        # Agar statistika umuman yo'q bo'lsa, uni yaratishga urinmaymiz (update qilamiz xolos)
-        return
+        return 
 
     if invited_count_change != 0:
         stats['invited_members_count'] += invited_count_change
@@ -159,60 +148,6 @@ def update_user_stats(user_id, chat_id, invited_count_change=0, ad_used=False, r
     data[user_id_str][chat_id_str] = stats
     _save_data(STATS_FILE, data)
 
-# --- Admin Kirish Ma'lumotlari (admins.json) ---
-
-def check_admin_credentials(login, password):
-    """Login va parolni tekshiradi va agar to'g'ri bo'lsa, admin ma'lumotlarini qaytaradi."""
-    data = _load_data(ADMINS_FILE)
-    
-    # Default adminni yaratish
-    if not data or 'default_admin' not in data:
-        data['default_admin'] = {
-            'username': 'admin',
-            'password_hash': _hash_password('12345'),
-            'user_id': None
-        }
-        _save_data(ADMINS_FILE, data)
-
-    hashed_password = _hash_password(password)
-
-    for key, admin in data.items():
-        if admin['username'] == login and admin['password_hash'] == hashed_password:
-            return admin
-    return None
-
-def get_admin_data(user_id):
-    """Telegram ID bo'yicha admin ma'lumotlarini oladi."""
-    data = _load_data(ADMINS_FILE)
-    
-    for admin_id, admin in data.items():
-        if admin.get('user_id') == user_id:
-            return admin
-    return {}
-
-def set_admin_data(user_id, username=None, password_hash=None):
-    """Admin ma'lumotlarini (login, parol, telegram ID) yangilaydi."""
-    data = _load_data(ADMINS_FILE)
-
-    admin_key = None
-    for key, admin in data.items():
-        if admin.get('user_id') == user_id:
-            admin_key = key
-            break
-
-    if admin_key:
-        if username: data[admin_key]['username'] = username
-        if password_hash: data[admin_key]['password_hash'] = _hash_password(password_hash)
-        if user_id: data[admin_key]['user_id'] = user_id
-    else:
-        new_key = str(user_id)
-        data[new_key] = {
-            'username': username or 'new_admin',
-            'password_hash': _hash_password(password_hash or '12345'),
-            'user_id': user_id
-        }
-    
-    _save_data(ADMINS_FILE, data)
 
 # --- Majburiy Kanallar (channels.json) ---
 
@@ -224,7 +159,7 @@ def add_channel(username):
     """Yangi majburiy kanal qo'shadi."""
     data = _load_data(CHANNELS_FILE, default_value=[])
     
-    if not any(c['channel_username'] == username for c in data):
+    if not any(c.get('channel_username') == username for c in data):
         data.append({'channel_username': username})
         _save_data(CHANNELS_FILE, data)
         return True
@@ -235,7 +170,7 @@ def delete_channel(username):
     data = _load_data(CHANNELS_FILE, default_value=[])
     
     initial_length = len(data)
-    data = [c for c in data if c['channel_username'] != username]
+    data = [c for c in data if c.get('channel_username') != username]
     
     if len(data) < initial_length:
         _save_data(CHANNELS_FILE, data)
