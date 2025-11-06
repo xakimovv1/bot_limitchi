@@ -7,10 +7,8 @@ from dotenv import load_dotenv
 # Aiogram importlari
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ChatMemberStatus, ContentType
-# FSM importlari olib tashlandi
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command 
-# InlineKeyboardBuilder qoldi, chunki u get_required_members uchun kerak
 from aiogram.utils.keyboard import InlineKeyboardBuilder 
 
 # Xatolar uchun importlar (Flood Control uchun)
@@ -22,12 +20,18 @@ from aiohttp import web, ClientSession
 # --- storage faylini import qilamiz ---
 try:
     from storage import (
-        get_config, update_config, get_user_stats, update_user_stats,
-        # Admin funksiyalari olib tashlandi
-        get_required_channels, add_channel, delete_channel, get_all_chat_configs,
+        get_config, 
+        update_config, # Kerak bo'lmasa ham qoldirildi
+        get_user_stats, 
+        update_user_stats,
+        get_required_channels, 
+        add_channel, 
+        delete_channel, 
+        get_all_chat_configs, # Kerak bo'lmasa ham qoldirildi
         add_new_group
     )
 except ImportError:
+    # Bu xato Git push qilinmaganini yoki fayl nomi xato ekanligini bildiradi
     print("❌ Xato: 'storage.py' fayli topilmadi. Ma'lumotlar bazasi mantig'i uchun bu fayl zarur.")
     exit()
 
@@ -35,8 +39,6 @@ load_dotenv()
 
 # --- BOT INITS ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-# ADMIN_TELEGRAM_ID olib tashlandi
-# Renderda o'z-o'zini ping qilish uchun URL (.env da o'rnatilishi kerak)
 RENDER_URL_FOR_PING = os.getenv("RENDER_URL_FOR_PING") 
 WEB_SERVER_PORT = int(os.getenv("PORT", 10000))
 
@@ -76,10 +78,6 @@ async def delete_message_later(chat_id, message_id, delay=330):
     except Exception:
         pass
 
-# notify_admin_about_error olib tashlandi
-
-# --- FSM HOLATLARI (AdminStates to'plami olib tashlandi) ---
-
 
 # --- FILTRLAR VA FUNKSIYALARI ---
 
@@ -93,9 +91,6 @@ async def get_required_members(config, ad_cycle_count):
     invite_levels = config.get('invite_levels', {})
 
     return invite_levels.get(str(current_level), invite_levels.get('max', 10))
-
-
-# --- ADMIN PANEL INTERFEYSI (Butunlay olib tashlandi) ---
 
 
 # --- MESSAGE HANDLERS ---
@@ -112,8 +107,6 @@ async def handle_start(message: types.Message):
         
     await message.answer("👋 **Xush kelibsiz!** Bu bot guruhlarda a'zolik taklif qilish orqali reklama limitini boshqaradi.")
 
-
-# Barcha admin FSM handlerlari olib tashlandi
 
 # --- GURUH HANDLERS ---
 
@@ -304,8 +297,6 @@ def setup_handlers(dp: Dispatcher):
     dp.message.register(handle_start, Command("start"))
     dp.message.register(handle_my_id_command, Command("myid"))
 
-    # FSM HANDLERS (Olib tashlandi)
-
     # GURUH HANDLERS (Limit mantiqi)
     dp.message.register(
         handle_new_member,
@@ -314,10 +305,8 @@ def setup_handlers(dp: Dispatcher):
     dp.message.register(
         handle_group_messages,
         lambda message: message.chat.type in ('group', 'supergroup') 
-        and message.content_type in (ContentType.TEXT, ContentType.PHOTO, ContentType.VIDEO, ContentType.AUDIO, ContentType.DOCUMENT)
+        and message.content_type in (ContentType.TEXT, ContentType.PHOTO, ContentType.VIDEO, ContentType.AUDIO, ContentType.DOCUMENT, ContentType.ANIMATION, ContentType.STICKER)
     )
-
-    # CALLBACK HANDLER (Olib tashlandi)
 
 
 async def start_polling():
