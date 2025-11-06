@@ -20,7 +20,6 @@ from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
 from aiohttp import web, ClientSession 
 
 # --- storage faylini import qilamiz ---
-# Iltimos, ushbu fayl asosiy fayl bilan bir xil joyda ekanligiga ishonch hosil qiling.
 try:
     from storage import (
         get_config, update_config, get_user_stats, update_user_stats,
@@ -35,15 +34,14 @@ load_dotenv()
 
 # --- BOT INITS ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-# Adminlik faqat shu ID orqali beriladi! (Login/Parol olib tashlandi)
-ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", 0)) 
+# ADMIN_TELEGRAM_ID olib tashlandi!
 RENDER_URL_FOR_PING = os.getenv("RENDER_URL_FOR_PING") 
 WEB_SERVER_PORT = int(os.getenv("PORT", 10000))
 
 bot = None
 dp = None
 
-# --- ADMIN FSM HOLATLARI ---
+# --- ADMIN FSM HOLATLARI (Saqlanib qoldi) ---
 class AdminStates(StatesGroup):
     MAIN_MENU = State()
     CONFIG_MENU = State()
@@ -57,7 +55,6 @@ class AdminStates(StatesGroup):
     DELETE_CHANNEL = State()
     
 # --- RENDER PINGER MANTIQI ---
-# (O'zgartirilmagan, avvalgidek qoldi)
 
 async def handle_ping(request):
     """Render'dan kelgan soxta so'rovlarga javob beradi."""
@@ -99,13 +96,14 @@ async def get_required_members(config, ad_cycle_count):
 
     return invite_levels.get(str(current_level), invite_levels.get('max', 10))
 
-# --- ADMIN PANEL INTERFEYSI (Qayta tiklandi) ---
+# --- ADMIN PANEL INTERFEYSI (Tugmalar Saqlanib qoldi) ---
 
-def get_admin_main_menu(admin_id):
+def get_admin_main_menu(user_id):
     builder = InlineKeyboardBuilder()
     builder.button(text="⚙️ Guruh Sozlamalari", callback_data="config_menu")
     builder.button(text="➕ Majburiy Kanallar", callback_data="channels_menu")
-    builder.button(text="👤 Admin Ma'lumotlari", callback_data="admin_credentials_menu")
+    # Admin Credentials tugmasi logiksiz qoldi, shunchaki saqlanib qoldi
+    builder.button(text="👤 Admin Paneli Info", callback_data="admin_credentials_menu") 
     builder.adjust(1)
     return builder.as_markup()
 
@@ -117,9 +115,8 @@ def get_config_menu(chat_id):
     builder.button(text=f"Tiklanish (kun): {config.get('reset_interval_days', 30)}", callback_data="set_interval")
     builder.button(text="--- Taklif Level'lari ---", callback_data="empty")
     
-    # Guruh IDlarini listlash
     chat_configs = get_all_chat_configs()
-    current_index = chat_configs.index(str(chat_id))
+    current_index = chat_configs.index(str(chat_id)) if str(chat_id) in chat_configs else 0
     
     builder.button(text=f"Guruh: {current_index + 1}/{len(chat_configs)}", callback_data="empty")
     
@@ -141,7 +138,7 @@ def get_channels_menu():
     if channels:
         for channel in channels:
             username = channel['channel_username']
-            builder.button(text=f"❌ {username}", callback_data=f"del_channel_{username}")
+            builder.button(text=f"❌ @{username}", callback_data=f"del_channel_{username}")
         builder.adjust(1)
     
     builder.button(text="➕ Yangi kanal qo'shish", callback_data="add_channel")
@@ -155,15 +152,19 @@ def get_cancel_markup():
     return builder.as_markup()
 
 
-# --- ADMIN CALLBACK HANDLERS (Qayta tiklandi) ---
+# --- ADMIN CALLBACK HANDLERS (Tugma Mantiqlari Saqlanib qoldi) ---
 
 async def handle_admin_callback(callback: types.CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
     current_data = await state.get_data()
-    chat_id = current_data.get('current_chat_id') 
+    chat_id = current_data.get('current_chat_id')
 
-    await callback.message.delete()
-    
+    try:
+        await callback.answer()
+        await callback.message.delete()
+    except Exception:
+        pass
+
     if callback.data == "main_menu":
         await state.set_state(AdminStates.MAIN_MENU)
         await callback.message.answer("🏠 **Boshqaruv Paneli**", reply_markup=get_admin_main_menu(user_id))
@@ -171,9 +172,15 @@ async def handle_admin_callback(callback: types.CallbackQuery, state: FSMContext
 
     # Guruh sozlamalari menyusiga o'tish
     if callback.data == "config_menu":
-        # Guruh IDsi yo'q bo'lsa yoki list bo'sh bo'lsa, birinchi guruh ID'sini olish
-        if not chat_id:
-            chat_id = str(get_all_chat_configs()[0]) if get_all_chat_configs() else "0"
+        chat_configs = get_all_chat_configs()
+        if not chat_configs:
+            await callback.message.answer("⚠️ Bot sozlamalari mavjud bo'lgan guruhlar topilmadi. Avval botni guruhga qo'shing va /start buyrug'ini bering.")
+            await state.set_state(AdminStates.MAIN_MENU)
+            return
+
+        if not chat_id or str(chat_id) not in chat_configs:
+             chat_id = chat_configs[0]
+             
         await state.update_data(current_chat_id=chat_id)
         
         await state.set_state(AdminStates.CONFIG_MENU)
@@ -207,7 +214,7 @@ async def handle_admin_callback(callback: types.CallbackQuery, state: FSMContext
         await callback.message.answer(f"⚙️ Guruh Sozlamalari (ID: {new_chat_id})", reply_markup=get_config_menu(new_chat_id))
         return
 
-    # Konfiguratsiya qiymatini o'zgartirishni boshlash
+    # Konfiguratsiya qiymatini o'zgartirishni boshlash (set_free_count, set_interval, set_level_x)
     if callback.data.startswith("set_"):
         key = callback.data.replace("set_", "")
         await state.update_data(config_key=key)
@@ -247,11 +254,11 @@ async def handle_admin_callback(callback: types.CallbackQuery, state: FSMContext
 
     # Kanalni o'chirish
     if callback.data.startswith("del_channel_"):
-        username = callback.data.replace("del_channel_", "")
-        if delete_channel(username):
-            await callback.answer(f"✅ Kanal ({username}) o'chirildi!", show_alert=True)
+        username_with_at = callback.data.replace("del_channel_", "")
+        if delete_channel(username_with_at.replace("@", "")):
+            await callback.answer(f"✅ Kanal (@{username_with_at}) o'chirildi!", show_alert=True)
         else:
-            await callback.answer(f"❌ Xato: Kanal ({username}) topilmadi.", show_alert=True)
+            await callback.answer(f"❌ Xato: Kanal (@{username_with_at}) topilmadi.", show_alert=True)
             
         # Menyuni yangilash
         await state.set_state(AdminStates.CHANNELS_MENU)
@@ -264,15 +271,14 @@ async def handle_admin_callback(callback: types.CallbackQuery, state: FSMContext
         await callback.message.answer("❌ Harakat bekor qilindi.", reply_markup=get_admin_main_menu(user_id))
         return
     
-    # Admin Credentials - Login/parolni o'zgartirish mantiqi olib tashlandi.
+    # Admin Credentials - Ma'lumot olib tashlanganligi sababli ogohlantirish
     if callback.data == "admin_credentials_menu":
-        # Bu yerda faqat ogohlantirish qoldirildi, chunki admin ma'lumotlari storage.py'dan o'chirildi
-        await callback.message.answer("⚠️ **Admin ma'lumotlarini o'zgartirish o'chirib qo'yilgan.** Faqat ADMIN_TELEGRAM_ID orqali boshqaring.", reply_markup=get_admin_main_menu(user_id))
+        await callback.message.answer("⚠️ **Admin kirish ma'lumotlari olib tashlangan.** Admin paneli endi shaxsiy suhbatda `/start` buyrug'i bilan ishlaydi.", reply_markup=get_admin_main_menu(user_id))
         await state.set_state(AdminStates.MAIN_MENU)
         return
 
 
-# --- ADMIN MESSAGE HANDLERS (Qayta tiklandi) ---
+# --- ADMIN MESSAGE HANDLERS ---
 
 async def save_config_value(message: types.Message, state: FSMContext, is_invite_level=False):
     try:
@@ -345,14 +351,22 @@ async def add_channel_handler(message: types.Message, state: FSMContext):
 # --- MESSAGE HANDLERS ---
 
 async def handle_start(message: types.Message, state: FSMContext):
-    """Botni /start buyrug'i bilan ishga tushirish (Admin kirish soddalashtirildi)."""
+    """Botni /start buyrug'i bilan ishga tushirish."""
     user_id = message.from_user.id
     
-    # 🛑 ADMIN KIRISH MANTIQI: Faqat ADMIN_TELEGRAM_ID orqali tekshirish
-    if user_id == ADMIN_TELEGRAM_ID and message.chat.type == 'private':
-        # Admin Boshqaruv Paneliga kirish
+    if message.chat.type == 'private':
+        # Admin paneliga kirish - Endi har bir foydalanuvchi sinab ko'rishi mumkin
+        # Chunki Admin ID tekshiruvi olib tashlandi.
+        
+        chat_configs = get_all_chat_configs()
+        if not chat_configs:
+            await state.set_state(AdminStates.MAIN_MENU)
+            await message.answer("🔑 **Admin Boshqaruv Paneli**\n\n⚠️ **Ogohlantirish:** Guruhlar ro'yxati bo'sh. Avval botni guruhga qo'shing va `/start` bering.", reply_markup=get_admin_main_menu(user_id))
+            return
+            
         await state.set_state(AdminStates.MAIN_MENU)
-        await state.update_data(current_chat_id=get_all_chat_configs()[0] if get_all_chat_configs() else "0")
+        # Birinchi guruh ID'sini olib, sozlamalar menusi uchun tayyorlaymiz
+        await state.update_data(current_chat_id=chat_configs[0]) 
         await message.answer("🔑 **Admin Boshqaruv Paneli**", reply_markup=get_admin_main_menu(user_id))
         return
         
@@ -366,13 +380,10 @@ async def handle_start(message: types.Message, state: FSMContext):
     await message.answer("👋 **Xush kelibsiz!** Bu bot guruhlarda a'zolik taklif qilish orqali reklama limitini boshqaradi.")
 
 
-# --- GURUH HANDLERS (O'zgartirilmagan) ---
+# --- GURUH HANDLERS ---
 
 async def handle_new_member(message: types.Message):
-    # Oldingi koddagi mantiq joyida qoldi
-    # ... (kod juda uzunligi sababli to'liq takrorlanmadi) ...
-    # ...
-
+    """Guruhga qo'shilgan yangi a'zolarni qutlaydi, takliflarni hisoblaydi va avtomatik limitni yechadi."""
     global bot
 
     chat_id = message.chat.id
@@ -461,10 +472,7 @@ async def handle_new_member(message: types.Message):
 
 
 async def handle_group_messages(message: types.Message):
-    # Oldingi koddagi mantiq joyida qoldi
-    # ... (kod juda uzunligi sababli to'liq takrorlanmadi) ...
-    # ...
-
+    """Guruhdagi oddiy xabarlarni limit bo'yicha cheklaydi."""
     global bot
 
     if message.chat.type not in ('group', 'supergroup') or message.from_user.id == (await bot.get_me()).id:
@@ -526,11 +534,9 @@ async def handle_group_messages(message: types.Message):
         asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330))
 
     except TelegramRetryAfter as e:
-        # Telegram Flood Control'ni so'radi. So'ralgan vaqtcha kutamiz.
         print(f"⚠️ Flood Control: {e.retry_after} soniya kutilyapti...")
         await asyncio.sleep(e.retry_after) 
         
-        # Kutib bo'lgach, xabarni qayta yuborishga urinish
         try:
             sent_message = await bot.send_message(
                 chat_id,
@@ -543,7 +549,6 @@ async def handle_group_messages(message: types.Message):
             print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA XATO (Qayta urinish): {retry_e}")
 
     except Exception as e:
-        # Boshqa noma'lum xatolar
         print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA NOMA'LUM XATO: {e}")
 
 
@@ -561,7 +566,7 @@ def setup_handlers(dp: Dispatcher):
     dp.message.register(handle_start, Command("start"))
     dp.message.register(handle_my_id_command, Command("myid"))
 
-    # ADMIN FSM HANDLERS (Faqat StateFilter orqali)
+    # ADMIN FSM HANDLERS (Faqat StateFilter orqali, hamma foydalanuvchilar kirishi mumkin)
     dp.callback_query.register(handle_admin_callback, StateFilter(AdminStates))
     
     # Guruh sozlamalarini yangilash
@@ -614,9 +619,6 @@ async def main():
     if not BOT_TOKEN:
         print("❌ BOT_TOKEN .env faylida topilmadi!")
         return
-        
-    if not ADMIN_TELEGRAM_ID:
-        print("⚠️ ADMIN_TELEGRAM_ID .env faylida o'rnatilmagan. Admin paneli ishlamaydi!")
 
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
