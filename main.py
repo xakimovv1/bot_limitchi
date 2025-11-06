@@ -21,7 +21,7 @@ from aiohttp import web, ClientSession
 
 # --- storage faylini import qilamiz ---
 # Iltimos, ushbu fayl asosiy fayl bilan bir xil joyda ekanligiga ishonch hosil qiling.
-try: # [cite: 2]
+try: 
     from storage import (
         get_config, update_config, get_user_stats, update_user_stats,
         check_admin_credentials, get_admin_data, set_admin_data,
@@ -39,7 +39,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TELEGRAM_ID = os.getenv("ADMIN_TELEGRAM_ID")
 # Renderda o'z-o'zini ping qilish uchun URL (.env da o'rnatilishi kerak)
 RENDER_URL_FOR_PING = os.getenv("RENDER_URL_FOR_PING") 
-WEB_SERVER_PORT = int(os.getenv("PORT", 10000)) # Render PORT muhit [cite: 3] o'zgaruvchisidan oladi
+WEB_SERVER_PORT = int(os.getenv("PORT", 10000)) # Render PORT muhit o'zgaruvchisidan oladi
 
 try:
     ADMIN_TELEGRAM_ID = int(ADMIN_TELEGRAM_ID)
@@ -59,7 +59,7 @@ async def handle_ping(request):
 async def periodic_pinger(url, interval_seconds=300): # Har 5 daqiqada (300 soniya)
     """Berilgan URL manzilga har 5 daqiqada so'rov yuboradi (o'zini-o'zi uyg'otish)."""
     if not url:
-        print("❌ [cite: 4] RENDER_URL_FOR_PING o'rnatilmagan. Pinger ishga tushmaydi.")
+        print("❌ RENDER_URL_FOR_PING o'rnatilmagan. Pinger ishga tushmaydi.")
         return
 
     async with ClientSession() as session:
@@ -69,7 +69,7 @@ async def periodic_pinger(url, interval_seconds=300): # Har 5 daqiqada (300 soni
                 # O'z-o'ziga soxta GET so'rovini yuborish
                 async with session.get(url) as response:
      
-                    print(f"🤖 Ping yuborildi. Status: {response.status}") # [cite: 5]
+                    print(f"🤖 Ping yuborildi. Status: {response.status}")
             except Exception as e:
                 print(f"❌ Ping yuborishda xato: {e}")
 
@@ -82,7 +82,7 @@ async def delete_message_later(chat_id, message_id, delay=330):
     try:
         await bot.delete_message(chat_id, message_id)
     
-    except Exception: # [cite: 6]
+    except Exception: 
         pass
 
 async def notify_admin_about_error(chat_id, error_message, action_name):
@@ -95,7 +95,7 @@ async def notify_admin_about_error(chat_id, error_message, action_name):
             f"Amal: **{action_name}**\n"
             f"Xato: <code>{error_message}</code>\n\n"
   
-            f"⚠️ **Yechim:** Botga guruhda Administrator ruxsatlari berilganligini tekshiring!" # [cite: 7]
+            f"⚠️ **Yechim:** Botga guruhda Administrator ruxsatlari berilganligini tekshiring!" 
         )
         try:
             await bot.send_message(ADMIN_TELEGRAM_ID, message, parse_mode="HTML")
@@ -104,12 +104,12 @@ async def notify_admin_about_error(chat_id, error_message, action_name):
 
 # --- FSM HOLATLARI ---
 class AdminStates(StatesGroup):
-    # waiting_for_login = State() # O'chirildi
-    # waiting_for_password = State() # O'chirildi
+    # Oldingi bosqichda o'chirildi: waiting_for_login = State()
+    # Oldingi bosqichda o'chirildi: waiting_for_password = State()
     in_admin_panel = State()
 
   
-    waiting_for_free_ad_count = State() # 
+    waiting_for_free_ad_count = State() 
     waiting_for_reset_interval = State()
     waiting_for_invite_level_name = State()
     waiting_for_invite_level_value = State()
@@ -131,7 +131,7 @@ async def get_required_members(config, ad_cycle_count):
         return 0
 
     current_level = ad_cycle_count - config.get('free_ad_count', 1) + 1
-    invite_levels [cite: 9] = config.get('invite_levels', {})
+    invite_levels = config.get('invite_levels', {})
 
     return invite_levels.get(str(current_level), invite_levels.get('max', 10))
 
@@ -154,7 +154,7 @@ async def get_group_list_keyboard():
     chat_ids = get_all_chat_configs()
     if chat_ids:
       
-        for chat_id_str in chat_ids: # [cite: 10]
+        for chat_id_str in chat_ids: 
             chat_id = int(chat_id_str)
             button_text = f"⚙️ Guruh ID: {chat_id}"
             builder.button(text=button_text, callback_data=f"select_chat:{chat_id}")
@@ -169,7 +169,7 @@ async def get_group_list_keyboard():
     return builder.as_markup()
 
 def get_chat_settings_keyboard(chat_id, config):
-    """Guruhning joriy sozlamalarini [cite: 11] ko'rsatuvchi tugmalar menyusi."""
+    """Guruhning joriy sozlamalarini ko'rsatuvchi tugmalar menyusi."""
     builder = InlineKeyboardBuilder()
 
     builder.button(
@@ -184,7 +184,8 @@ def get_chat_settings_keyboard(chat_id, config):
         text="Taklif Level'larini sozlash 🎯",
         callback_data=f"set_invite_levels:{chat_id}"
     )
-    builder.button(text="⬅️ Guruhlar ro'yxatiga", [cite: 12] callback_data="admin_settings_groups")
+    # 🛑 Tuzatilgan qator: Sintaktik xato olib tashlandi
+    builder.button(text="⬅️ Guruhlar ro'yxatiga", callback_data="admin_settings_groups")
     builder.adjust(1)
     return builder.as_markup()
 
@@ -201,7 +202,7 @@ def get_invite_levels_keyboard(chat_id, invite_levels: dict):
         sorted_keys.append('max')
 
     for level_key in sorted_keys:
-        value [cite: 13] = invite_levels[level_key]
+        value = invite_levels[level_key]
         text = f"Level {level_key}: {value} ta odam ✏️"
 
         builder.button(text=text, callback_data=f"edit_level:{chat_id}:{level_key}")
@@ -218,7 +219,7 @@ def get_invite_levels_keyboard(chat_id, invite_levels: dict):
 
     return builder.as_markup()
 
-def [cite: 14] get_admin_credentials_keyboard(admin_data):
+def get_admin_credentials_keyboard(admin_data):
     """Login/parol sozlamalari menyusi."""
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Loginni o'zgartirish", callback_data="change_login")
@@ -234,7 +235,7 @@ async def get_channels_keyboard(channels):
         for channel in channels:
             username = channel['channel_username']
             
-            builder.button( # [cite: 15]
+            builder.button( 
                 text=f"❌ @{username}",
                 callback_data=f"delete_channel:{username}"
             )
@@ -249,7 +250,8 @@ async def get_channels_keyboard(channels):
 
 async def handle_start(message: types.Message, state: FSMContext):
     """Botni /start buyrug'i bilan ishga tushirish (admin tekshiruvi)."""
-    if message.from_user.id == ADMIN_TELEGRAM_ID: # [cite: 16] Faqat ADMIN_TELEGRAM_ID orqali kirish
+    # Kirish mantiqi faqat ADMIN_TELEGRAM_ID orqali
+    if message.from_user.id == ADMIN_TELEGRAM_ID: 
         await message.answer("✅ **Xush kelibsiz!** Admin panelga kirdingiz.", reply_markup=get_admin_main_menu())
         await state.set_state(AdminStates.in_admin_panel)
         return
@@ -276,7 +278,7 @@ async def process_new_free_ad_count(message: types.Message, state: FSMContext):
     config['free_ad_count'] = new_count
     await state.update_data(current_config=config)
 
-    await [cite: 19] state.set_state(AdminStates.in_admin_panel)
+    await state.set_state(AdminStates.in_admin_panel)
 
     await message.answer(
         f"✅ **Sozlama saqlandi!** Reklama soni endi **{new_count}** ga o'rnatildi.",
@@ -285,7 +287,7 @@ async def process_new_free_ad_count(message: types.Message, state: FSMContext):
 
 async def process_new_reset_interval(message: types.Message, state: FSMContext):
     if not message.text.isdigit():
-        await message.answer("❌ Noto'g'ri format. [cite: 20] Iltimos, faqat **to'liq kun sonini** kiriting.")
+        await message.answer("❌ Noto'g'ri format. Iltimos, faqat **to'liq kun sonini** kiriting.")
         return
 
     new_days = int(message.text)
@@ -305,7 +307,7 @@ async def process_new_reset_interval(message: types.Message, state: FSMContext):
 
     await message.answer(
      
-        f"✅ **Sozlama saqlandi!** Limit endi har **{new_days}** kunda tiklanadi.", # [cite: 21]
+        f"✅ **Sozlama saqlandi!** Limit endi har **{new_days}** kunda tiklanadi.",
         reply_markup=get_chat_settings_keyboard(chat_id, config)
     )
 
@@ -317,7 +319,7 @@ async def process_invite_level_name(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(temp_level_name=level_name)
-    await message.answer(f"🔢 Level **{level_name}** uchun nechta odam taklif qilish kerak? [cite: 22] (Son kiriting):")
+    await message.answer(f"🔢 Level **{level_name}** uchun nechta odam taklif qilish kerak? (Son kiriting):")
     await state.set_state(AdminStates.waiting_for_invite_level_value)
 
 async def process_invite_level_value(message: types.Message, state: FSMContext):
@@ -337,7 +339,7 @@ async def process_invite_level_value(message: types.Message, state: FSMContext):
     update_config(chat_id, 'invite_levels', invite_levels)
     config['invite_levels'] = invite_levels
    
-    await state.update_data(current_config=config) # [cite: 23]
+    await state.update_data(current_config=config) 
 
     await state.set_state(AdminStates.in_admin_panel)
 
@@ -355,10 +357,10 @@ async def process_new_chat_id_for_limit(message: types.Message, state: FSMContex
     if match:
         chat_identifier = f"@{match.group(1)}"
     elif chat_input.startswith('-100') and chat_input[1:].isdigit():
-        chat_identifier = chat_input # [cite: 24]
+        chat_identifier = chat_input 
     
     else:
-        await message.answer("❌ Noto'g'ri format. [cite: 25] Iltimos, guruhning **@username**'ini, **to'liq linkini** yoki **ID raqamini** kiriting.")
+        await message.answer("❌ Noto'g'ri format. Iltimos, guruhning **@username**'ini, **to'liq linkini** yoki **ID raqamini** kiriting.")
         return
 
     try:
@@ -369,7 +371,7 @@ async def process_new_chat_id_for_limit(message: types.Message, state: FSMContex
         if new_chat_id > 0:
               await message.answer("❌ Bu username/link guruhga emas. Guruh yoki Superguruh linkini kiriting.")
               
-              return # [cite: 26]
+              return 
 
         add_new_group(new_chat_id)
         config = get_config(new_chat_id)
@@ -380,9 +382,9 @@ async def process_new_chat_id_for_limit(message: types.Message, state: FSMContex
                  status_text = "✅ Bot guruhda **admin** sifatida mavjud."
             else:
       
-                status_text = "⚠️ Bot guruhda admin emas. [cite: 27, 28] Iltimos, botni guruhga **admin sifatida** qo'shing."
+                status_text = "⚠️ Bot guruhda admin emas. Iltimos, botni guruhga **admin sifatida** qo'shing."
         except Exception:
-             status_text = "⚠️ Bot bu guruhda topilmadi. [cite: 29] Iltimos, botni guruhga **admin sifatida** qo'shing."
+             status_text = "⚠️ Bot bu guruhda topilmadi. Iltimos, botni guruhga **admin sifatida** qo'shing."
 
         await state.set_state(AdminStates.in_admin_panel)
 
@@ -395,7 +397,7 @@ async def process_new_chat_id_for_limit(message: types.Message, state: FSMContex
         )
 
     except Exception as e:
-        await [cite: 30] message.answer(f"❌ Guruh topilmadi yoki bot u yerdan ma'lumot ololmaydi. To'liq username/link va bot admin ekanligini tekshiring.\n\nXato: {e}")
+        await message.answer(f"❌ Guruh topilmadi yoki bot u yerdan ma'lumot ololmaydi. To'liq username/link va bot admin ekanligini tekshiring.\n\nXato: {e}")
 
 async def process_new_channel_username(message: types.Message, state: FSMContext):
     username = message.text.lstrip('@')
@@ -411,7 +413,7 @@ async def process_new_channel_username(message: types.Message, state: FSMContext
     await message.answer(
         f"✅ Kanal **@{username}** muvaffaqiyatli qo'shildi.",
      
-        reply_markup=await get_channels_keyboard(channels) # [cite: 31]
+        reply_markup=await get_channels_keyboard(channels) 
     )
 
 async def process_new_admin_login(message: types.Message, state: FSMContext):
@@ -434,7 +436,7 @@ async def process_new_admin_password(message: types.Message, state: FSMContext):
     new_password = message.text.strip()
     admin_id = message.from_user.id
 
-    admin_data [cite: 32] = get_admin_data(admin_id)
+    admin_data = get_admin_data(admin_id)
 
     set_admin_data(admin_id, username=admin_data.get('username'), password_hash=new_password)
 
@@ -456,10 +458,10 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         await state.set_state(AdminStates.in_admin_panel)
         await call.message.edit_text("✅ **Admin Panel**", reply_markup=get_admin_main_menu())
   
-        await call.answer() # [cite: 33]
+        await call.answer() 
     elif data == "admin_logout":
         await state.clear()
-        await call.message.edit_text("🚪 Tizimdan chiqdingiz. [cite: 34] Qayta kirish uchun /start ni bosing.")
+        await call.message.edit_text("🚪 Tizimdan chiqdingiz. Qayta kirish uchun /start ni bosing.")
         await call.answer("Chiqish amalga oshirildi.", show_alert=True)
     elif data == "admin_settings_groups":
         await call.message.edit_text(
@@ -468,14 +470,14 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
             parse_mode="HTML"
         )
         await call.answer()
-    elif data == [cite: 35] "add_new_group_for_limit":
+    elif data == "add_new_group_for_limit":
         await call.message.edit_text("➕ **Yangi Guruh Qo'shish**\n\n"
                                      "Iltimos, guruhning **@username**'ini, **to'liq linkini** yoki **ID raqamini** (`-100...`) kiriting.")
         await state.set_state(AdminStates.waiting_for_new_chat_id)
         await call.answer()
     elif data.startswith("select_chat:"):
         chat_id = int(data.split(":")[1])
-        config [cite: 36] = get_config(chat_id)
+        config = get_config(chat_id)
 
         await state.update_data(current_chat_id=chat_id, current_config=config)
 
@@ -488,7 +490,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
     elif data.startswith("set_ad_count:") or data.startswith("set_reset_interval:"):
         await state.update_data(current_chat_id=int(data.split(":")[1]))
    
-        if data.startswith("set_ad_count:"): # [cite: 37]
+        if data.startswith("set_ad_count:"): 
             await call.message.edit_text("🔢 **Qancha bepul reklama ruxsat etilsin?** (Son kiriting)", parse_mode="HTML")
             await state.set_state(AdminStates.waiting_for_free_ad_count)
         elif data.startswith("set_reset_interval:"):
@@ -499,14 +501,14 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
 
     elif data.startswith("set_invite_levels:"):
    
-        chat_id = int(data.split(":")[1]) # [cite: 38]
+        chat_id = int(data.split(":")[1]) 
         config = get_config(chat_id)
 
         await state.update_data(current_chat_id=chat_id, current_config=config)
 
         await call.message.edit_text(
             f"📈 **Guruh ID: {chat_id} Taklif Level'lari**\n\n"
-            f"Bepul reklama soni tugagandan keyin, har bir keyingi xabar uchun qancha odam taklif qilinishi kerakligini belgilang. [cite: 39] (`max` - barcha level'lar tugagandan keyingi qiymat).",
+            f"Bepul reklama soni tugagandan keyin, har bir keyingi xabar uchun qancha odam taklif qilinishi kerakligini belgilang. (`max` - barcha level'lar tugagandan keyingi qiymat).",
             reply_markup=get_invite_levels_keyboard(chat_id, config['invite_levels']),
             parse_mode="HTML"
         )
@@ -517,7 +519,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text("✏️ **Yangi Level nomi**ni kiriting (Masalan: `1`, `2`, yoki `max`):")
         await state.set_state(AdminStates.waiting_for_invite_level_name)
  
-        await call.answer() # [cite: 40]
+        await call.answer() 
     elif data.startswith("edit_level:"):
         _, chat_id_str, level_name = data.split(":")
         chat_id = int(chat_id_str)
@@ -528,7 +530,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
             f"✏️ Level **{level_name}** uchun **yangi taklif sonini** kiriting. "
             f"(Hozirgi qiymat: {config['invite_levels'].get(level_name)}):"
  
-        ) # [cite: 41]
+        ) 
         await state.set_state(AdminStates.waiting_for_invite_level_value)
         await call.answer()
     elif data.startswith("delete_level:"):
@@ -538,7 +540,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
 
         if level_name in config['invite_levels']:
             del config['invite_levels'][level_name]
-            update_config(chat_id, 'invite_levels', [cite: 42] config['invite_levels'])
+            update_config(chat_id, 'invite_levels', config['invite_levels'])
 
             await call.message.edit_text(
                 f"✅ Level **{level_name}** muvaffaqiyatli o'chirildi.",
@@ -546,7 +548,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
             )
             await call.answer(f"Level {level_name} o'chirildi.")
         else:
-            await call.answer("Xato: Level [cite: 43] topilmadi.", show_alert=True)
+            await call.answer("Xato: Level topilmadi.", show_alert=True)
     elif data == "admin_channels":
         channels = get_required_channels()
         text = "📺 **Majburiy a'zolik Kanallari**\n"
@@ -556,7 +558,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text(text, reply_markup=await get_channels_keyboard(channels), parse_mode="HTML")
         await call.answer()
     elif data == "add_new_channel":
-        await call.message.edit_text("➕ **Kanal qo'shish**\nIltimos, kanalning [cite: 44] **@username**'ni kiriting:")
+        await call.message.edit_text("➕ **Kanal qo'shish**\nIltimos, kanalning **@username**'ni kiriting:")
         await state.set_state(AdminStates.waiting_for_new_channel_username)
         await call.answer()
     elif data.startswith("delete_channel:"):
@@ -569,7 +571,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
 
         channels = get_required_channels()
         
-        await call.message.edit_text("✅ Kanallar ro'yxati yangilandi.", reply_markup=await get_channels_keyboard(channels)) # [cite: 45]
+        await call.message.edit_text("✅ Kanallar ro'yxati yangilandi.", reply_markup=await get_channels_keyboard(channels)) 
 
     elif data == "admin_credentials":
         text = f"🔑 **Login/Parol Sozlamalari**\n\n" \
@@ -579,7 +581,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
         await call.message.edit_text(text, reply_markup=get_admin_credentials_keyboard(admin), parse_mode="HTML")
         await call.answer()
     elif data == "change_login":
-        await [cite: 46] state.update_data(admin_id=call.from_user.id)
+        await state.update_data(admin_id=call.from_user.id)
         await call.message.edit_text("✏️ **Yangi loginni kiriting:**")
         await state.set_state(AdminStates.waiting_for_new_admin_login)
         await call.answer()
@@ -596,7 +598,7 @@ async def handle_admin_callbacks(call: types.CallbackQuery, state: FSMContext):
 
 async def handle_new_member(message: types.Message):
  
-    """Guruhga qo'shilgan yangi a'zolarni qutlaydi, takliflarni hisoblaydi va avtomatik limitni yechadi.""" # [cite: 47]
+    """Guruhga qo'shilgan yangi a'zolarni qutlaydi, takliflarni hisoblaydi va avtomatik limitni yechadi.""" 
     global bot
 
     chat_id = message.chat.id
@@ -611,7 +613,7 @@ async def handle_new_member(message: types.Message):
         real_new_members_count = 0
         for member in message.new_chat_members:
          
-            if member.id == bot_id: # [cite: 48]
+            if member.id == bot_id: 
                 continue
             real_new_members_count += 1
             member_links.append(f"[{member.full_name}](tg://user?id={member.id})")
@@ -619,7 +621,7 @@ async def handle_new_member(message: types.Message):
         if not member_links:
             try:
                 await message.delete()
-            except [cite: 49] Exception:
+            except Exception:
                 pass
             return
 
@@ -628,7 +630,7 @@ async def handle_new_member(message: types.Message):
         else:
             welcome_text = f"👋 **Salom!** Guruhimizga xush kelibsiz: {', '.join(member_links)}."
 
-        welcome_text += "\n\nBu guruhda xabar yuborish [cite: 50] uchun siz ham do'stlaringizni taklif qilishingiz kerak!"
+        welcome_text += "\n\nBu guruhda xabar yuborish uchun siz ham do'stlaringizni taklif qilishingiz kerak!"
 
         is_limit_released = False
 
@@ -641,7 +643,7 @@ async def handle_new_member(message: types.Message):
             )
 
  
-            config = get_config(chat_id) # [cite: 51]
+            config = get_config(chat_id) 
             updated_stats = get_user_stats(inviter_user_id, chat_id, config)
 
             required_members = await get_required_members(config, updated_stats['current_ad_cycle_count'])
@@ -652,7 +654,7 @@ async def handle_new_member(message: types.Message):
                 remaining_members = current_invited - required_members
 
  
-                update_user_stats(inviter_user_id, chat_id, ad_used=True, reset_invited=True) # [cite: 52]
+                update_user_stats(inviter_user_id, chat_id, ad_used=True, reset_invited=True) 
                 if remaining_members > 0:
                     update_user_stats(inviter_user_id, chat_id, invited_count_change=remaining_members)
 
@@ -660,19 +662,19 @@ async def handle_new_member(message: types.Message):
 
                 inviter_link = f"[{inviter_full_name}](tg://user?id={inviter_user_id})"
      
-                success_text = ( # [cite: 53]
-                    f"🎉 **{inviter_link}**, siz **{current_invited}** ta odam qo'shdingiz! [cite: 54] "
+                success_text = ( 
+                    f"🎉 **{inviter_link}**, siz **{current_invited}** ta odam qo'shdingiz! "
                     f"Talab qilingan miqdor **({required_members})** bajarildi.\n\n"
-                    f"Sizning xabar yuborish cheklovingiz olib tashlandi. [cite: 55] Xabar yuborishingiz mumkin!"
+                    f"Sizning xabar yuborish cheklovingiz olib tashlandi. Xabar yuborishingiz mumkin!"
                 )
                 try:
                     await bot.send_message(chat_id, success_text, parse_mode="Markdown")
                 except Exception as e:
-                    print(f"❌ SUCCESS XABAR YUBORISHDA [cite: 56] XATO: {e}")
+                    print(f"❌ SUCCESS XABAR YUBORISHDA XATO: {e}")
 
             if not is_limit_released and inviter_user_id != bot_id:
                  inviter_link = f"[{inviter_full_name}](tg://user?id={inviter_user_id})"
-                 welcome_text += f"\n\n**{inviter_link}**, siz **{real_new_members_count}** ta odam qo'shganingiz uchun rahmat! [cite: 57] 😊"
+                 welcome_text += f"\n\n**{inviter_link}**, siz **{real_new_members_count}** ta odam qo'shganingiz uchun rahmat! 😊"
 
 
         try:
@@ -686,7 +688,7 @@ async def handle_new_member(message: types.Message):
             await message.delete()
         except Exception as e:
  
-            await notify_admin_about_error(chat_id, str(e), "Salomlashish (sistem xabarini o'chirish)") # [cite: 58]
+            await notify_admin_about_error(chat_id, str(e), "Salomlashish (sistem xabarini o'chirish)") 
 
 
 async def handle_group_messages(message: types.Message):
@@ -703,7 +705,7 @@ async def handle_group_messages(message: types.Message):
         member = await bot.get_chat_member(chat_id, user_id)
         if member.status in [ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR]:
  
-            return # [cite: 59]
+            return 
     except Exception:
         pass
 
@@ -722,7 +724,7 @@ async def handle_group_messages(message: types.Message):
         remaining_members = current_invited - required_members
 
    
-        update_user_stats(user_id, chat_id, ad_used=True, reset_invited=True) # [cite: 60]
+        update_user_stats(user_id, chat_id, ad_used=True, reset_invited=True) 
         if remaining_members > 0:
             update_user_stats(user_id, chat_id, invited_count_change=remaining_members)
 
@@ -739,9 +741,9 @@ async def handle_group_messages(message: types.Message):
     user_link = f"[{message.from_user.full_name}](tg://user?id={user_id})"
 
    
-    message_text = ( # [cite: 61]
-        f"❌ **{user_link}**, siz xabar yuborish qoidalarini buzdingiz! [cite: 62] (Limit)\n\n"
-        f"Keyingi xabar uchun yana **{missing}** ta odam qo'shing. [cite: 63] \n"
+    message_text = ( 
+        f"❌ **{user_link}**, siz xabar yuborish qoidalarini buzdingiz! (Limit)\n\n"
+        f"Keyingi xabar uchun yana **{missing}** ta odam qo'shing. \n"
         f"Sizning joriy hisobingiz: {current_invited} ta odam.\n\n"
     )
     
@@ -753,7 +755,7 @@ async def handle_group_messages(message: types.Message):
             parse_mode="Markdown"
         )
        
-        asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330)) # [cite: 64]
+        asyncio.create_task(delete_message_later(sent_message.chat.id, sent_message.message_id, delay=330)) 
 
     except TelegramRetryAfter as e:
         # Telegram Flood Control'ni so'radi. So'ralgan vaqtcha kutamiz.
@@ -764,7 +766,7 @@ async def handle_group_messages(message: types.Message):
         try:
             sent_message = await bot.send_message(
        
-                chat_id, # [cite: 65]
+                chat_id, 
                 message_text,
                 parse_mode="Markdown"
             )
@@ -774,7 +776,7 @@ async def handle_group_messages(message: types.Message):
             print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA XATO (Qayta urinish): {retry_e}")
 
    
-    except Exception as e: # [cite: 66]
+    except Exception as e: 
         # Boshqa noma'lum xatolar
         print(f"❌ LIMIT OGOHLANTIRISHI YUBORISHDA NOMA'LUM XATO: {e}")
 
@@ -785,15 +787,14 @@ async def handle_my_id_command(message: types.Message):
         await message.reply(f"Sizning ID raqamingiz:\n`{message.from_user.id}`\n\n"
                             f"Agar guruhda yozgan bo'lsangiz, guruh IDsi:\n`{message.chat.id}`", parse_mode="Markdown")
 
-# --- ISHGA TUSHIRISH MANTIQI  (aiogram 3.x) ---
+# --- ISHGA TUSHIRISH MANTIQI (aiogram 3.x) ---
 
 def setup_handlers(dp: Dispatcher):
 
     # MESSAGE HANDLERS
     dp.message.register(handle_start, Command("start"))
     dp.message.register(handle_my_id_command, Command("myid"))
-    # dp.message.register(process_login, StateFilter(AdminStates.waiting_for_login)) # O'chirildi
-    # dp.message.register(process_password, StateFilter(AdminStates.waiting_for_password)) # O'chirildi
+    # Login/parol handlerlari o'chirildi
 
     # FSM HANDLERS
     dp.message.register(process_new_free_ad_count, StateFilter(AdminStates.waiting_for_free_ad_count))
@@ -809,7 +810,7 @@ def setup_handlers(dp: Dispatcher):
     dp.message.register(
         handle_new_member,
     
-        lambda message: message.chat.type in ('group', 'supergroup') and message.content_type == ContentType.NEW_CHAT_MEMBERS # [cite: 68]
+        lambda message: message.chat.type in ('group', 'supergroup') and message.content_type == ContentType.NEW_CHAT_MEMBERS 
     )
     dp.message.register(
         handle_group_messages,
@@ -826,7 +827,7 @@ async def start_polling():
     global bot, dp
     print("🚀 Bot Polling (Telegram so'rovlari) ishga tushdi.")
  
-    await dp.start_polling(bot) # [cite: 69]
+    await dp.start_polling(bot) 
 
 async def start_server():
     """Veb-serverni ishga tushiradi (Renderning 'always on' bo'lishi uchun)."""
@@ -850,7 +851,7 @@ async def main():
     global bot, dp
 
   
-    if not BOT_TOKEN: # [cite: 70]
+    if not BOT_TOKEN: 
         print("❌ BOT_TOKEN .env faylida topilmadi!")
         return
 
@@ -866,7 +867,7 @@ async def main():
     if RENDER_URL_FOR_PING:
         # Pinger vazifasini alohida task sifatida boshlaymiz
    
-        asyncio.create_task(periodic_pinger(RENDER_URL_FOR_PING)) # [cite: 71]
+        asyncio.create_task(periodic_pinger(RENDER_URL_FOR_PING)) 
 
     # 3. Bot Pollingni ishga tushiramiz (Telegramdan xabarlarni qabul qilish uchun)
     await start_polling()
